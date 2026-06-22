@@ -1,0 +1,26 @@
+# Byte-compiled / caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Editor / tooling local state
+.claude/
+.DS_Store
+.ipynb_checkpoints/
+
+# Python envs / packaging
+.venv/
+venv/
+env/
+*.egg-info/
+
+# Generated outputs
+out/
+
+# Large datasets and inputs (kept out of VCS; a small sample is force-added)
+datasets/
+seeds/
+_uitest/
+
+# Archives
+*.zip
