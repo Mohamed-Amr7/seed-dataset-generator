@@ -174,7 +174,7 @@ def schema() -> dict:
             })
     order = ["I/O", "scene composition", "per-seed augmentation", "drop shadow",
              "backgrounds", "segmentation", "realism", "performance",
-             "output", "other"]
+             "output", "data split", "sampling", "export", "other"]
     out = []
     for title in order:
         if title in groups:

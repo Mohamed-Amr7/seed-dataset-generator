@@ -20,6 +20,7 @@ $$(".tab").forEach(t => t.onclick = () => {
 function fieldRow(f) {
   const row = document.createElement("div");
   row.className = "field";
+  row.dataset.field = f.name;          // lets updateSegVisibility() toggle per-method rows
   const lab = document.createElement("label");
   lab.innerHTML = `<code>${f.name}</code>`;
   lab.title = f.help || "";
@@ -61,6 +62,27 @@ function fieldRow(f) {
   return row;
 }
 
+// Per-method segmentation params: each row is only shown when the selected --segment
+// method actually uses it (the checklist's "dynamically show the relevant parameters").
+const SEG_FIELD_METHODS = {
+  grabcut_iters: ["grabcut"], grabcut_rect_margin: ["grabcut"],
+  grabcut_min_object_area: ["grabcut"],
+  otsu_blur_kernel: ["otsu"], otsu_threshold_adjustment: ["otsu"],
+  morph_kernel: ["grabcut", "otsu", "threshold"],
+  rembg_model: ["rembg"],
+  sam_checkpoint: ["sam"], sam_model_type: ["sam"], sam_prompt_type: ["sam"],
+  sam_points_per_side: ["sam"], sam_pred_iou_thresh: ["sam"],
+  sam_stability_score_thresh: ["sam"],
+};
+
+function updateSegVisibility() {
+  const m = STATE.segment || "auto";
+  for (const [name, methods] of Object.entries(SEG_FIELD_METHODS)) {
+    const row = $(`#form .field[data-field="${name}"]`);
+    if (row) row.style.display = methods.includes(m) ? "" : "none";
+  }
+}
+
 function buildForm() {
   const host = $("#form"); host.innerHTML = "";
   SCHEMA.groups.forEach(g => {
@@ -69,6 +91,10 @@ function buildForm() {
     g.fields.forEach(f => fs.appendChild(fieldRow(f)));
     host.appendChild(fs);
   });
+  // toggle per-method rows whenever the segmentation method changes
+  const segSel = $('#form [data-field="segment"]');
+  if (segSel) segSel.addEventListener("change", updateSegVisibility);
+  updateSegVisibility();
 }
 
 function setForm(values) {        // fill inputs + STATE from a config dict
@@ -80,6 +106,7 @@ function setForm(values) {        // fill inputs + STATE from a config dict
     else { inp.value = Array.isArray(v) ? v.join(",") : (v ?? ""); STATE[name] = v; }
   });
   syncSegControls();              // keep the seg tuner aligned with the loaded recipe
+  updateSegVisibility();          // show the per-method param rows for the loaded method
 }
 
 // Seed the Segmentation-tuner controls from the loaded Run-form config so a check
