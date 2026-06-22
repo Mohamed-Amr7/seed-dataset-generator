@@ -82,35 +82,59 @@ def _extra_annotation(pv: dict) -> dict:
             "orig_w": t.get("orig_w"), "orig_h": t.get("orig_h")}
 
 
+def _coco_ann(img_id: int, ann_id: int, label, pieces, pv,
+              extra_annotations: bool) -> dict:
+    """Build one COCO annotation dict (shared by both passes of write_coco)."""
+    cls, x0, y0, x1, y1 = label
+    ann = {"id": ann_id, "image_id": img_id, "category_id": int(cls) + 1,
+           "bbox": [int(x0), int(y0), int(x1 - x0), int(y1 - y0)], "iscrowd": 0}
+    seg, area = [], 0
+    if pieces:
+        for poly in pieces:
+            flat = [int(v) for v in np.asarray(poly).reshape(-1)]
+            if len(flat) >= 6:
+                seg.append(flat)
+                area += int(abs(cv2.contourArea(np.asarray(poly, np.int32))))
+    if seg:
+        ann["segmentation"] = seg
+    ann["area"] = area if area > 0 else int((x1 - x0) * (y1 - y0))
+    if extra_annotations and pv is not None:
+        ann["extra_annotations"] = _extra_annotation(pv)
+    return ann
+
+
 def write_coco(path: Path, records, class_names: List[str],
                extra_annotations: bool = False) -> None:
-    images, annotations = [], []
-    ann_id = 1
-    for img_id, rec in enumerate(records, start=1):
-        file_name, W, H, labels = rec[0], rec[1], rec[2], rec[3]
+    """Stream the COCO JSON to disk in two passes over `records` (images, then
+    annotations) so neither the full images/annotations lists nor a monolithic
+    json.dumps string is ever materialised. Output is byte-identical to a single
+    json.dumps({"images": [...], "annotations": [...], "categories": [...]})
+    because each element is dumped with the default separators and joined by ", "."""
+    def _pieces_prov(rec, labels):
         polys = rec[4] if len(rec) > 4 and rec[4] is not None else [None] * len(labels)
         prov = rec[5] if len(rec) > 5 and rec[5] is not None else [None] * len(labels)
-        images.append({"id": img_id, "file_name": file_name, "width": W, "height": H})
-        for (cls, x0, y0, x1, y1), pieces, pv in zip(labels, polys, prov):
-            ann = {"id": ann_id, "image_id": img_id, "category_id": int(cls) + 1,
-                   "bbox": [int(x0), int(y0), int(x1 - x0), int(y1 - y0)], "iscrowd": 0}
-            seg, area = [], 0
-            if pieces:
-                for poly in pieces:
-                    flat = [int(v) for v in np.asarray(poly).reshape(-1)]
-                    if len(flat) >= 6:
-                        seg.append(flat)
-                        area += int(abs(cv2.contourArea(np.asarray(poly, np.int32))))
-            if seg:
-                ann["segmentation"] = seg
-            ann["area"] = area if area > 0 else int((x1 - x0) * (y1 - y0))
-            if extra_annotations and pv is not None:
-                ann["extra_annotations"] = _extra_annotation(pv)
-            annotations.append(ann)
-            ann_id += 1
-    categories = [{"id": i + 1, "name": n} for i, n in enumerate(class_names)]
-    path.write_text(json.dumps(
-        {"images": images, "annotations": annotations, "categories": categories}))
+        return polys, prov
+
+    with open(path, "w") as f:
+        f.write('{"images": [')
+        for img_id, rec in enumerate(records, start=1):
+            if img_id > 1:
+                f.write(", ")
+            f.write(json.dumps({"id": img_id, "file_name": rec[0],
+                                "width": rec[1], "height": rec[2]}))
+        f.write('], "annotations": [')
+        ann_id = 1
+        for img_id, rec in enumerate(records, start=1):
+            labels = rec[3]
+            polys, prov = _pieces_prov(rec, labels)
+            for label, pieces, pv in zip(labels, polys, prov):
+                if ann_id > 1:
+                    f.write(", ")
+                f.write(json.dumps(
+                    _coco_ann(img_id, ann_id, label, pieces, pv, extra_annotations)))
+                ann_id += 1
+        categories = [{"id": i + 1, "name": n} for i, n in enumerate(class_names)]
+        f.write('], "categories": ' + json.dumps(categories) + '}')
 
 
 def write_multilabel_csv(path: Path, rows, class_names: List[str]) -> None:

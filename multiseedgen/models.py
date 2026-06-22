@@ -67,6 +67,14 @@ class Config:
     segment: str = "auto"         # auto|alpha|threshold|otsu|grabcut|rembg|sam
     bg_tolerance: float = 28.0    # color distance for border-thresholding
     max_sources: int = 0          # 0 = use all
+    # OPT-IN memory cap: downscale any stored seed patch whose long side exceeds this
+    # many px (0 = off, full resolution). Bounds the in-RAM seed pool when sources are
+    # huge. Output is byte-identical only when no seed exceeds the cap (a no-op);
+    # otherwise it resamples seeds and changes rendered pixels -- a memory/quality
+    # tradeoff (a seed is re-scaled to the render size from the cap, not the original).
+    # Keep it well above ceil(scale_max * img_size) (~116px with defaults, the largest
+    # a seed is ever rendered) for visually near-lossless results.
+    max_seed_px: int = 0
     # P0 robustness: confidence-gated learned fallback + caching + overrides
     seg_conf_thresh: float = 0.55     # below this, route a source to rembg / skip
     rembg_fallback: bool = True       # auto-route low-confidence sources to rembg

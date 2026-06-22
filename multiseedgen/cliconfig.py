@@ -195,6 +195,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help="max concurrent GPU rembg sessions when --rembg-provider "
                         "resolves to CUDA (bounds VRAM; default 4 ~= 3.7GB on a 6GB card)")
     g.add_argument("--max-sources", type=int, default=0, help="0 = use all")
+    g.add_argument("--max-seed-px", type=int, default=0,
+                   help="OPT-IN: cap each stored seed patch's long side (px) to bound the "
+                        "in-RAM seed pool (0 = off). Resamples oversized seeds -> changes "
+                        "rendered pixels (memory/quality tradeoff); keep well above "
+                        "ceil(scale_max*img_size) for near-lossless output")
 
     g = p.add_argument_group("data split")
     g.add_argument("--val-seed-holdout", type=float, default=0.0,

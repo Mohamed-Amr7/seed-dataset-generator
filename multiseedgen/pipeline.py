@@ -1,12 +1,14 @@
 from __future__ import annotations
 """Deterministic per-scene workers and the run() driver."""
 
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import cv2
+import gc
 import json
 import numpy as np
 import os
-import pickle
+import shutil
 import sys
 import time
 
@@ -15,7 +17,7 @@ from .constants import IMG_EXTS
 from .degrade import _jpeg_quality
 from .export import (write_coco, write_data_yaml, write_multilabel_csv,
                      write_run_manifest, write_yolo_label, write_yolo_seg_label)
-from .models import Config, _QAStats
+from .models import Config, Seed, _QAStats
 from .optdeps import Parallel, _HAVE_JOBLIB, _tqdm, delayed
 from .qa import check_segmentation, make_previews, write_qa_report
 from .segmentation import load_seeds, write_seg_report
@@ -41,13 +43,51 @@ _ASSET_CACHE: Dict[str, tuple] = {}
 
 
 
+def _stage_assets_mmap(stage_dir: Path, manifest_path: Path,
+                       seeds: list, textures: list) -> None:
+    """Stage seeds + textures as individual raw .npy files plus a JSON manifest so
+    every loky worker can memory-map the SAME files read-only (one shared physical
+    copy via the OS page cache) instead of unpickling its own full duplicate. The
+    seed order in the manifest mirrors the parent's `seeds` list exactly, so the
+    pools reconstructed in each worker are byte- and order-identical -> deterministic."""
+    shutil.rmtree(stage_dir, ignore_errors=True)        # clear any stale staging
+    stage_dir.mkdir(parents=True, exist_ok=True)
+    seed_entries = []
+    for i, s in enumerate(seeds):
+        fn = f"seed_{i}.npy"
+        np.save(stage_dir / fn, np.ascontiguousarray(s.rgba))
+        seed_entries.append({"file": fn, "class_id": int(s.class_id),
+                             "source": s.source, "method": s.method, "split": s.split})
+    tex_entries = []
+    for j, t in enumerate(textures):
+        fn = f"tex_{j}.npy"
+        np.save(stage_dir / fn, np.ascontiguousarray(t))
+        tex_entries.append(fn)
+    manifest_path.write_text(json.dumps(
+        {"dir": str(stage_dir), "seeds": seed_entries, "textures": tex_entries}))
+
+
 def _load_assets(assets_path: str) -> tuple:
-    """Load (seeds, textures) once per worker process and memoize."""
+    """Reconstruct (pools, textures) from the staged manifest once per worker process
+    and memoize. Each `rgba`/texture is opened with mmap_mode='r', so all workers map
+    the same physical pages (~1x RAM total, independent of worker count). The pools are
+    rebuilt with the SAME split filter the parent uses, preserving seed order."""
     cached = _ASSET_CACHE.get(assets_path)
-    if cached is None:
-        with open(assets_path, "rb") as f:
-            cached = pickle.load(f)
-        _ASSET_CACHE[assets_path] = cached
+    if cached is not None:
+        return cached
+    manifest = json.loads(Path(assets_path).read_text())
+    stage_dir = Path(manifest["dir"])
+    seeds = [Seed(rgba=np.load(stage_dir / e["file"], mmap_mode="r"),
+                  class_id=e["class_id"], source=e["source"],
+                  method=e["method"], split=e["split"])
+             for e in manifest["seeds"]]
+    pools = {
+        "train": [s for s in seeds if s.split in ("train", "both")],
+        "val":   [s for s in seeds if s.split in ("val", "both")],
+    }
+    textures = [np.load(stage_dir / fn, mmap_mode="r") for fn in manifest["textures"]]
+    cached = (pools, textures)
+    _ASSET_CACHE[assets_path] = cached
     return cached
 
 
@@ -68,13 +108,14 @@ def _available_ram_bytes() -> Optional[int]:
 def _resolve_backend(cfg: Config, seeds: list, textures: list, workers: int) -> str:
     """Choose the scene-generation parallel backend.
 
-    'loky' (separate processes) is fastest but each worker holds its OWN full copy of
-    the seed+texture assets; for a large asset set on a small machine that multiplies
-    into an out-of-memory kill. 'threading' shares the parent's single in-memory copy
-    (cv2/numpy release the GIL, so it still uses multiple cores) at ~1x memory.
+    'loky' (separate processes) is fastest. Its workers memory-map the staged assets
+    read-only, so all processes share ONE physical copy via the OS page cache (~1x
+    RAM, independent of worker count) instead of each unpickling a full duplicate.
+    'threading' shares the parent's single in-memory copy (cv2/numpy release the GIL,
+    so it still uses multiple cores) at ~1x memory.
 
-    'auto' picks loky only when (workers + 1) asset copies fit in ~60% of available
-    RAM, otherwise threading."""
+    'auto' picks loky when the single shared asset copy fits in ~60% of available RAM,
+    otherwise threading (which avoids the extra on-disk staging at the same ~1x cost)."""
     choice = getattr(cfg, "parallel_backend", "auto")
     if not _HAVE_JOBLIB or workers <= 1:
         return "threading"                          # parallel disabled -> serial loop
@@ -83,12 +124,11 @@ def _resolve_backend(cfg: Config, seeds: list, textures: list, workers: int) -> 
     asset_bytes = (sum(int(s.rgba.nbytes) for s in seeds)
                    + sum(int(t.nbytes) for t in textures))
     avail = _available_ram_bytes()
-    need = (workers + 1) * asset_bytes
+    need = asset_bytes                              # memmap-shared: ~1x, not (workers+1)x
     if avail and need > 0.60 * avail:
-        print(f"  [mem] assets ~{asset_bytes/1e9:.1f} GB/worker; {workers} loky "
-              f"processes would need ~{need/1e9:.0f} GB > 60% of ~{avail/1e9:.0f} GB "
-              f"free -> using threaded workers (shared memory, ~{asset_bytes/1e9:.1f} "
-              f"GB total)")
+        print(f"  [mem] assets ~{asset_bytes/1e9:.1f} GB > 60% of ~{avail/1e9:.0f} GB "
+              f"free even shared once -> using threaded workers (no on-disk staging); "
+              f"consider --max-seed-px / --max-sources to shrink the seed pool")
         return "threading"
     return "loky"
 
@@ -150,6 +190,8 @@ def run(cfg: Config) -> None:
     print(f"[1/3] loading + segmenting sources from {cfg.sources}")
     seeds, class_names, source_bgs, seg_results = load_seeds(cfg)
     write_seg_report(cfg.out, seg_results, cfg)
+    del seg_results            # the SegResult container is unused past the report
+    gc.collect()               # reclaim freed patch/background buffers before render
 
     if cfg.check_seeds > 0:
         check_segmentation(seeds, class_names, cfg.out, cfg.check_seeds)
@@ -196,17 +238,24 @@ def run(cfg: Config) -> None:
 
     workers = cfg.workers if cfg.workers > 0 else min(os.cpu_count() or 1, 8)
     backend = _resolve_backend(cfg, seeds, textures, workers)
+    n_seeds, n_textures = len(seeds), len(textures)   # kept for the summary after drop
 
-    # Only the loky (process) backend needs the assets staged to disk: each worker
-    # process loads its OWN copy once (memoized in _ASSET_CACHE) instead of re-pickling
-    # per task. The threading/serial paths share the parent's single in-memory copy, so
-    # they need neither the temp file nor any per-process duplication.
+    # Only the loky (process) backend stages assets to disk: each worker memory-maps
+    # the SAME .npy files read-only, so all processes share one physical copy via the
+    # OS page cache instead of unpickling a full per-process duplicate. Once staged,
+    # the parent drops its own in-RAM seeds/pools/textures (workers read from disk), so
+    # the heavy generation phase sits at ~1x asset RAM regardless of worker count. The
+    # threading/serial paths keep the parent's single shared in-memory copy.
     assets_path = None
+    stage_dir = None
     if backend == "loky":
-        assets_path = str(cfg.out / ".assets.pkl")
-        with open(assets_path, "wb") as f:
-            pickle.dump((pools, textures), f, protocol=pickle.HIGHEST_PROTOCOL)
-        _ASSET_CACHE[assets_path] = (pools, textures)
+        stage_dir = cfg.out / ".assets_mmap"
+        assets_path = str(cfg.out / ".assets_manifest.json")
+        _stage_assets_mmap(stage_dir, Path(assets_path), seeds, textures)
+        pools = None
+        seeds = None
+        textures = None
+        gc.collect()
 
     parallel = _HAVE_JOBLIB and workers > 1
     desc = f"{workers} {backend} worker(s)" if parallel else "serial"
@@ -237,7 +286,12 @@ def run(cfg: Config) -> None:
             gen = Parallel(n_jobs=workers, backend=backend, return_as="generator",
                            batch_size=batch)(tasks)
         else:
-            gen = (_render_one(cfg, pools[split], textures, split, i, seed_seqs[i])
+            # serial path (parallel disabled or count == 1). When loky staged the
+            # assets the parent dropped its in-RAM pools, so map them back from disk
+            # (memmap, ~0 RAM); otherwise use the parent's shared in-memory copy.
+            s_pools, s_textures = (_load_assets(assets_path) if backend == "loky"
+                                   else (pools, textures))
+            gen = (_render_one(cfg, s_pools[split], s_textures, split, i, seed_seqs[i])
                    for i in range(count))
         for result in _tqdm(gen, total=count, desc=split, unit="img"):
             nb, neg = _write_result(cfg, split, result, coco_store)
@@ -262,6 +316,8 @@ def run(cfg: Config) -> None:
                                          "boxes": prov or []}))
             (cfg.out / f"provenance_{split}.jsonl").write_text("\n".join(lines) +
                                                                ("\n" if lines else ""))
+        del coco_store, prov_store, ml_store     # per-split metadata; freed before next split
+        gc.collect()
 
     print("[3/3] writing annotations")
     if want_labels:
@@ -271,6 +327,8 @@ def run(cfg: Config) -> None:
             write_coco(cfg.out / f"annotations_{split}.json",
                        coco_records[split], class_names,
                        extra_annotations=cfg.extra_annotations)
+            coco_records[split] = []        # free each split's records once written
+        gc.collect()
     if ml_rows is not None:
         write_multilabel_csv(cfg.out / "multilabel.csv", ml_rows, class_names)
         print(f"  wrote multilabel.csv ({len(ml_rows)} rows, {len(class_names)} classes)")
@@ -280,14 +338,18 @@ def run(cfg: Config) -> None:
             os.remove(assets_path)
         except OSError:
             pass
+        if stage_dir is not None:
+            shutil.rmtree(stage_dir, ignore_errors=True)   # drop the staged .npy files
+        _ASSET_CACHE.pop(assets_path, None)
+        gc.collect()
 
     avg = total_boxes / max(1, cfg.num_images)
     summary = {
         "num_images": cfg.num_images, "n_train": n_train, "n_val": n_val,
         "total_boxes": total_boxes, "total_negatives": total_neg,
-        "avg_boxes_per_image": round(avg, 3), "n_seeds": len(seeds),
+        "avg_boxes_per_image": round(avg, 3), "n_seeds": n_seeds,
         "n_classes": len(class_names), "class_names": class_names,
-        "n_textures": len(textures), "workers": workers, "seed": cfg.seed,
+        "n_textures": n_textures, "workers": workers, "seed": cfg.seed,
         "wall_seconds": round(time.time() - t_start, 1),
     }
     write_run_manifest(cfg, class_names, summary)

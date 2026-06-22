@@ -970,6 +970,17 @@ def load_seeds(cfg: Config):
             if cfg.bg_from_sources and r.background is not None:
                 source_bgs.append(r.background)
 
+    # OPT-IN downscale cap: shrink oversized patches BEFORE staging/pooling so the
+    # in-RAM pool (and the loky workers' shared copy) is bounded. Applied after the
+    # cache load on purpose, so it never enters the segmentation cache key. Off (0) by
+    # default -> output byte-identical; any value changes pixels, hence opt-in.
+    if cfg.max_seed_px and cfg.max_seed_px > 0:
+        from .compositing import _resize_to_long_side
+        for s in seeds:
+            h, w = s.rgba.shape[:2]
+            if max(h, w) > cfg.max_seed_px:
+                s.rgba = _resize_to_long_side(s.rgba, cfg.max_seed_px)
+
     if cfg.max_sources and len(seeds) > cfg.max_sources:
         idx = np.random.default_rng(cfg.seed).choice(
             len(seeds), cfg.max_sources, replace=False)
@@ -990,6 +1001,15 @@ def load_seeds(cfg: Config):
     if not seeds:
         sys.exit("no usable seeds were segmented - check --segment / "
                  "--seg-conf-thresh / --bg-tolerance, and read seg_report.txt")
+
+    # Release the heavy pixel buffers we no longer need. Kept patches are already
+    # referenced by Seed.rgba (the SAME ndarray, no copy) and any extracted
+    # backgrounds by source_bgs, so this frees only the dropped/sub-sampled patches
+    # and every background once collected. write_seg_report reads r.report /
+    # r.cache_hit only, so the returned results stay valid for the report.
+    for r in results:
+        r.patch = None
+        r.background = None
     return seeds, class_names, source_bgs, results
 
 
