@@ -1,0 +1,118 @@
+Prompt for Claude Code: Feature Additions to the Augmenter‑Segmenter‑Annotator App
+Context
+We have a working application that:
+
+Segments seeds perfectly using rembg (U²‑Net via ONNX)
+
+Generates diverse backgrounds
+
+Creates COCO‑format instance masks (polygons/RLE) and bounding boxes
+
+Generates synthetic images by compositing seeds onto backgrounds
+
+We now need to extend it with SAM integration, configurable segmentation methods, and ensure that all known problems (listed below) are solvable through augmentation or preprocessing options.
+
+Do not redesign the application. Only add the features described in this checklist.
+
+Checklist of Tasks
+1. Add a Configuration System for Segmentation Methods
+Create a config.yaml (or extend existing) that allows the user to choose a segmentation method per job.
+
+Supported methods: grabcut, otsu, u2net (rembg), sam.
+
+Each method must have its own clearly documented parameter section, visible in the config file and accessible in the UI (if any).
+
+Example structure:
+
+yaml
+segmentation:
+  method: sam   # grabcut, otsu, u2net, sam
+  grabcut:
+    iterations: 3
+    rect_margin: 0.05
+    morph_kernel: 3
+    min_object_area: 0.1
+  otsu:
+    blur_kernel: 5
+    threshold_adjustment: 0
+  u2net:
+    model_path: "rembg"   # or custom .onnx path
+    device: "cuda"
+  sam:
+    model_type: "vit_h"    # vit_h, vit_l, vit_b
+    prompt_type: "automatic"  # points, box, automatic
+    points_per_side: 32
+    pred_iou_thresh: 0.88
+    stability_score_thresh: 0.95
+The app must instantiate the correct segmentation class based on method and pass the parameter sub‑dictionary.
+
+2. Implement SAM Integration (Segment Anything Model)
+Add a sam_segment.py module (or equivalent) that uses the official segment-anything package.
+
+Class: SAMSegmenter with methods:
+
+segment_with_points(image, points, labels) – points = list of (x,y), labels = 1 (foreground) / 0 (background).
+
+segment_with_box(image, box) – box = [x, y, w, h].
+
+segment_automatic(image) – uses SamAutomaticMaskGenerator.
+
+All methods must return a binary mask (numpy array) and the corresponding bounding box.
+
+For automatic mode, expose all SamAutomaticMaskGenerator parameters (points_per_side, pred_iou_thresh, etc.) in the config.
+
+Ensure that SAM’s output masks are converted to COCO‑compatible polygon/RLE format (same as existing export).
+
+3. Unify All Segmentation Methods Under a Common Interface
+Each segmentation class (GrabcutSegmenter, OtsuSegmenter, U2NetSegmenter, SAMSegmenter) must implement:
+
+python
+def segment(image: np.ndarray) -> dict:
+    # returns {
+    #   "mask": binary_mask (H,W) np.uint8,
+    #   "bbox": [x, y, w, h],
+    #   "confidence": float (optional),
+    #   "method": str
+    # }
+The existing rembg‑based U2Net class should be refactored (if needed) to match this signature without changing its internal logic.
+
+4. Expose All Segmentation Parameters in the UI / CLI
+If the app has a graphical interface, add a settings panel that dynamically shows the relevant parameters depending on the selected segmentation method.
+
+If CLI‑only, ensure --seg-method and all related flags are parsed and documented.
+
+5. Augmentation Pipeline to Solve Every Known Problem
+Add the following augmentation options in the augmentation module (transforms.py or similar). All augmentations should be configurable via the same config.yaml.
+
+Problem to Solve	Augmentation / Preprocessing Feature
+Invalid bboxes	Auto‑clipping of bbox/mask to image bounds; discard empty masks.
+Mosaic offset errors	If mosaic is used, implement correct shift+clamp logic.
+Dataset imbalance	Enable class‑balanced sampling during synthetic generation.
+Overfitting / poor generalization	Random rotation (±30°), scaling (0.8–1.2), translation (±10%), shear (±5°), colour jitter (brightness, contrast, saturation, hue), Gaussian blur, Poisson noise.
+Small/large seed scale variability	Allow per‑seed random scaling before placement (min/max scale factor).
+Overlapping seeds / clutter	Overlap control: IoU threshold for allowed overlap (e.g., 0.15) and consecutive failure limit to stop placement when canvas is full.
+Poor data labeling	(Segmentation methods with manual review already exist, but if not, add a simple “review masks” mode that lets the user approve/reject each auto‑generated mask and adjust with a brush.)
+Data leakage	Add a “split mode” that holds out a set of seed images for validation, ensuring no seed appears in both train and val.
+Light / background shift	Random background generation (solid, gradient, texture, real‑world) and random gamma adjustment.
+Mixed seeds false positives	Ensure synthetic generation can mix all 30 classes in one image with configurable class probabilities (default uniform).
+Binary classification limitation	Export an optional multi‑label CSV (e.g., seed_filename, defect1, defect2, …) alongside COCO. This can be used later for classifier training.
+Each augmentation must be togglable in the config file under an augmentation: section.
+
+6. COCO Export Already Exists – Ensure Consistency
+The existing COCO exporter must correctly handle segmentation masks from all methods (GrabCut, Otsu, U2Net, SAM). Convert masks to polygon or RLE as needed. For SAM, use the mask_to_polygon function.
+
+Add an extra_annotations field (optional) to store original seed dimensions, scale factor, and segmentation method used.
+
+7. Add a Background Generation Module (if not already present)
+Options: solid colour, linear/radial gradient, random image from a folder, procedural noise (Perlin) to simulate paper/soil.
+
+Configured under background: in config.
+
+8. Validation / Hold‑out Set Generation
+Provide a command --generate-val that uses a separate list of seed images (not used in training) to create validation images with the same synthetic pipeline.
+
+9. Example Config File
+Include a fully commented config.yaml that demonstrates every option and parameter.
+
+10. Documentation
+Add a README.md or docstrings explaining each segmentation method, how to use SAM with different prompt types, and how augmentations solve the listed problems.
