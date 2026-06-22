@@ -1,0 +1,25 @@
+# Test — hardest (cast shadow + watermark); polygon labels. See RECOMMENDED_SETTINGS.md.
+config:
+  sources: seeds/Test/images
+  out: datasets/test
+  num_images: 3000
+  img_size: 640
+  min_seeds: 6
+  max_seeds: 22
+  scale_min: 0.06
+  scale_max: 0.18
+  bg_from_sources: true
+  neg_frac: 0.12
+  segment: rembg
+  rembg_provider: auto
+  gpu_seg_jobs: 4
+  fmt: yolo-seg
+  degrade: true
+  noise_sigma: 3
+  jpeg_quality_min: 75
+  jpeg_quality_max: 95
+  blur_max_sigma: 0.6
+  shadow_dir_mode: scene
+  qa_report: true
+  visualize_count: 12
+  seed: 7

@@ -1,0 +1,26 @@
+# Wheat — tiny, low-contrast, 256px sources. See RECOMMENDED_SETTINGS.md.
+config:
+  sources: seeds/Varietal purity of wheat seeds dataset
+  out: datasets/wheat
+  class_mode: subfolders
+  num_images: 4000
+  img_size: 512
+  min_seeds: 12
+  max_seeds: 45
+  scale_min: 0.03
+  scale_max: 0.09
+  min_box_px: 6
+  bg_from_sources: true
+  neg_frac: 0.10
+  segment: auto
+  seg_conf_thresh: 0.48
+  rembg_provider: auto
+  fmt: both
+  masks: true
+  degrade: true
+  noise_sigma: 3
+  jpeg_quality_min: 80
+  jpeg_quality_max: 95
+  shadow_dir_mode: scene
+  qa_report: true
+  seed: 7

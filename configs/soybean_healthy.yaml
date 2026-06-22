@@ -1,0 +1,27 @@
+# Soybean (Healthy) — single class; pale soybean on cream tray, cast shadow + watermark.
+# Narrow subset of seeds/Test/images (133 Healthy sources). See RECOMMENDED_SETTINGS.md.
+config:
+  sources: seeds/Test/images/Healthy
+  out: datasets/soybean_healthy
+  class_mode: single          # one "seed" class (Healthy soybean)
+  num_images: 2500            # bounded by 133 unique cut-outs; tune as needed
+  img_size: 640
+  min_seeds: 6
+  max_seeds: 22
+  scale_min: 0.06
+  scale_max: 0.18
+  bg_from_sources: true       # recover the real cream tray (domain match)
+  neg_frac: 0.12
+  segment: rembg              # cleanly drops cast shadow + avoids watermark text
+  rembg_provider: auto
+  gpu_seg_jobs: 4             # lower to 2 if the cold first pass hits a VRAM OOM
+  fmt: yolo-seg               # schema-identical to seeds/Test/annotations/Healthy/*.txt
+  degrade: true
+  noise_sigma: 3
+  jpeg_quality_min: 75
+  jpeg_quality_max: 95
+  blur_max_sigma: 0.6
+  shadow_dir_mode: scene
+  qa_report: true
+  visualize_count: 12
+  seed: 7

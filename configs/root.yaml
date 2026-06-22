@@ -1,0 +1,26 @@
+# Root — clean, large, 27 species. See RECOMMENDED_SETTINGS.md.
+config:
+  sources: seeds/Root
+  out: datasets/root
+  class_mode: subfolders
+  num_images: 6000
+  img_size: 640
+  min_seeds: 8
+  max_seeds: 30
+  scale_min: 0.05
+  scale_max: 0.16
+  bg_from_sources: true
+  neg_frac: 0.10
+  segment: auto
+  rembg_provider: auto
+  fmt: both
+  masks: true
+  degrade: true
+  noise_sigma: 3
+  jpeg_quality_min: 80
+  jpeg_quality_max: 95
+  blur_max_sigma: 0.5
+  shadow_dir_mode: scene
+  qa_report: true
+  visualize_count: 12
+  seed: 7
