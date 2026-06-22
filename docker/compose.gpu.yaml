@@ -1,0 +1,32 @@
+# MultiSeedGen - GPU compose service.
+#
+# REQUIRES the NVIDIA Container Toolkit on the host (see GPU_SETUP.md). Without
+# it, `deploy.resources.reservations.devices` / --gpus fails with
+# "could not select device driver". This mirrors seed-bank's prod GPU worker.
+#
+#   docker compose -f docker/compose.gpu.yaml up --build        # Web UI on :8000
+#   docker compose -f docker/compose.gpu.yaml run --rm multiseedgen \
+#       python -m multiseedgen --sources /data/seeds --out /data/out --num-images 2000
+services:
+  multiseedgen:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.gpu
+    image: multiseedgen:gpu
+    container_name: multiseedgen-gpu
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../seeds:/data/seeds:ro       # source single-seed images (read-only)
+      - ./_out:/data/out              # generated datasets
+      - ./_models:/models             # rembg/U2Net model cache (persist downloads)
+    environment:
+      - MULTISEEDGEN_DATA_ROOT=/data  # web UI browses datasets under here
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
