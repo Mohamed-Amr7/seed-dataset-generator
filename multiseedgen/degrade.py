@@ -69,4 +69,7 @@ def apply_degradation(canvas_f32: np.ndarray, cfg: Config,
         img = rng.poisson(scaled).astype(np.float32)
     if cfg.noise_sigma > 0:
         img = img + rng.normal(0, cfg.noise_sigma, img.shape)
+    if cfg.aug_gamma > 0:                            # random tone curve (lighting shift)
+        g = max(0.1, float(rng.uniform(1.0 - cfg.aug_gamma, 1.0 + cfg.aug_gamma)))
+        img = 255.0 * np.power(np.clip(img, 0, 255) / 255.0, 1.0 / g)
     return img

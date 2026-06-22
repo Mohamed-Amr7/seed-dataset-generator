@@ -36,6 +36,20 @@ def _rotate(rgba: np.ndarray, angle: float) -> np.ndarray:
 
 
 
+def _shear(rgba: np.ndarray, shear_deg: float) -> np.ndarray:
+    """Horizontal shear of a BGRA cut-out, expanding the canvas so nothing is clipped
+    (transparent border). Applied before placement so the label box is recomputed from
+    the warped alpha and stays correct."""
+    h, w = rgba.shape[:2]
+    k = float(np.tan(np.deg2rad(shear_deg)))
+    nw = max(1, int(np.ceil(w + abs(k) * (h - 1))))
+    tx = -k * (h - 1) if k < 0 else 0.0
+    m = np.array([[1.0, k, tx], [0.0, 1.0, 0.0]], dtype=np.float32)
+    return cv2.warpAffine(rgba, m, (nw, h), flags=cv2.INTER_LINEAR,
+                          borderValue=(0, 0, 0, 0))
+
+
+
 def _jitter(rgba: np.ndarray, cfg: Config, rng: np.random.Generator) -> np.ndarray:
     rgb = rgba[..., :3]
     hsv = cv2.cvtColor(rgb, cv2.COLOR_BGR2HSV).astype(np.float32)
@@ -54,6 +68,7 @@ def transform_seed(seed: Seed, cfg: Config, canvas: int,
     not ``record`` is set (it only collects the sampled params), so determinism is
     preserved. With record=True returns (rgba, params); else just rgba."""
     rgba = seed.rgba
+    oh, ow = rgba.shape[:2]                          # original cut-out dims (provenance)
     scale_frac = rng.uniform(cfg.scale_min, cfg.scale_max)
     long_px = max(4, int(scale_frac * canvas))
     rgba = _resize_to_long_side(rgba, long_px)
@@ -67,11 +82,16 @@ def transform_seed(seed: Seed, cfg: Config, canvas: int,
     if cfg.max_rotation > 0:
         rot = float(rng.uniform(-cfg.max_rotation, cfg.max_rotation))
         rgba = _rotate(rgba, rot)
+    shear = 0.0
+    if cfg.aug_shear > 0:                            # draw only when enabled (keeps
+        shear = float(rng.uniform(-cfg.aug_shear, cfg.aug_shear))  # legacy streams stable)
+        rgba = _shear(rgba, shear)
     if cfg.jitter_hue or cfg.jitter_sat or cfg.jitter_val:
         rgba = _jitter(rgba, cfg, rng)
     if record:
         return rgba, {"scale": round(float(scale_frac), 4), "flip_h": bool(flip_h),
-                      "flip_v": bool(flip_v), "rotation": round(rot, 2)}
+                      "flip_v": bool(flip_v), "rotation": round(rot, 2),
+                      "shear": round(shear, 2), "orig_w": int(ow), "orig_h": int(oh)}
     return rgba
 
 
@@ -335,13 +355,45 @@ def _mask_to_polygons(bin_mask: np.ndarray, min_area: float = 6.0) -> list:
 
 
 
+def _build_class_sampler(cfg: Config, seeds: List[Seed]):
+    """Return a `sample(rng) -> seed_index` that picks a CLASS first (uniform, or by
+    cfg.class_probs weights in class-id order), then a seed uniformly within it. This
+    counters source-count imbalance and lets a scene mix every class with a configurable
+    probability. Returns None when balancing is off (caller keeps the legacy draw)."""
+    if not cfg.class_balanced:
+        return None
+    by_class: Dict[int, List[int]] = {}
+    for i, s in enumerate(seeds):
+        by_class.setdefault(s.class_id, []).append(i)
+    classes = sorted(by_class)
+    probs = cfg.class_probs
+    if probs:
+        w = np.array([max(0.0, float(probs[c])) if c < len(probs) else 0.0
+                      for c in classes], dtype=np.float64)
+        if w.sum() <= 0:
+            w = np.ones(len(classes), dtype=np.float64)
+    else:
+        w = np.ones(len(classes), dtype=np.float64)
+    w = w / w.sum()
+    idx_lists = [by_class[c] for c in classes]
+
+    def sample(rng: np.random.Generator) -> int:
+        ci = int(rng.choice(len(classes), p=w))
+        lst = idx_lists[ci]
+        return int(lst[rng.integers(0, len(lst))])
+
+    return sample
+
+
+
 def generate_scene(cfg: Config, seeds: List[Seed], textures: List[np.ndarray],
                    rng: np.random.Generator, negative: bool = False):
     """Return (image_uint8, labels, polys, prov).
 
     labels = [(class_id, x0, y0, x1, y1), ...]; polys is a parallel list (one entry
     per label, each a list of Nx2 int polygon pieces) when cfg.masks else None;
-    prov is a parallel list of provenance dicts when cfg.provenance else None.
+    prov is a parallel list of provenance dicts when cfg.provenance or
+    cfg.extra_annotations else None.
     If ``negative`` is True, returns a background-only image with empty labels."""
     canvas = make_background(cfg, seeds, textures, rng)
     H, W = canvas.shape[:2]
@@ -363,11 +415,14 @@ def generate_scene(cfg: Config, seeds: List[Seed], textures: List[np.ndarray],
     placed: List[dict] = []
     boxes_for_iou: List[Tuple[int, int, int, int]] = []
 
+    class_sampler = _build_class_sampler(cfg, seeds)   # None unless class_balanced
+    want_record = cfg.provenance or cfg.extra_annotations
     seed_id = 0
     for _ in range(n):
-        seed_index = int(rng.integers(0, len(seeds)))
+        seed_index = (class_sampler(rng) if class_sampler is not None
+                      else int(rng.integers(0, len(seeds))))
         chosen = seeds[seed_index]
-        if cfg.provenance:
+        if want_record:
             rgba, tparams = transform_seed(chosen, cfg, cfg.img_size, rng, record=True)
         else:
             rgba, tparams = transform_seed(chosen, cfg, cfg.img_size, rng), None
@@ -392,14 +447,15 @@ def generate_scene(cfg: Config, seeds: List[Seed], textures: List[np.ndarray],
         if result is None:
             continue
         placed.append({"seed_id": seed_id, "class_id": chosen.class_id,
-                       "seed_index": seed_index, "tparams": tparams, **result})
+                       "seed_index": seed_index, "tparams": tparams,
+                       "source": chosen.source, "seg_method": chosen.method, **result})
         boxes_for_iou.append(result["box"])
         seed_id += 1
 
     # ---- occlusion filter: how much of each seed survived later pastes ----
     labels: List[Tuple[int, int, int, int, int]] = []
     polys = [] if cfg.masks else None
-    prov = [] if cfg.provenance else None
+    prov = [] if want_record else None
     for p in placed:
         visible = int((owner == p["seed_id"]).sum())
         if p["denom"] == 0:
@@ -415,7 +471,8 @@ def generate_scene(cfg: Config, seeds: List[Seed], textures: List[np.ndarray],
             polys.append(pieces)
         if prov is not None:
             prov.append({"seed_index": p["seed_index"], "class_id": p["class_id"],
-                         "box": [x0, y0, x1, y1], "transform": p["tparams"]})
+                         "box": [x0, y0, x1, y1], "transform": p["tparams"],
+                         "source": p["source"], "seg_method": p["seg_method"]})
 
     img = apply_degradation(canvas, cfg, rng) if cfg.degrade else canvas
     img = np.clip(img, 0, 255).astype(np.uint8)
