@@ -73,6 +73,24 @@ python seedgen.py --config configs/example.yaml \
   --segment sam --sam-checkpoint models/sam_vit_b_01ec64.pth --sam-model-type vit_b
 ```
 
+### Running SAM in Docker (opt-in)
+
+To avoid forcing torch on everyone, SAM has its own image
+([`docker/Dockerfile.sam`](docker/Dockerfile.sam), `python:3.12-slim`) behind a
+compose **profile** — the default image stays light. After downloading a checkpoint
+to `models/`:
+
+```bash
+docker compose -f docker/compose.gpu.yaml --profile sam run --rm multiseedgen-sam \
+  python -m multiseedgen --sources /data/seeds --out /data/out --num-images 2000 \
+  --segment sam --sam-checkpoint models/sam_vit_b_01ec64.pth --sam-model-type vit_b
+```
+
+The repo `models/` is mounted at `/app/models`, so the relative `--sam-checkpoint`
+path resolves inside the container. torch is CPU-only by default (works with no
+NVIDIA toolkit); see [`docker/GPU_SETUP.md`](docker/GPU_SETUP.md) "Path 3" for the
+GPU build and details.
+
 ### Prompt modes (`sam.prompt_type`)
 - `automatic` (default): `SamAutomaticMaskGenerator`; the central, large, non-frame-filling
   mask is selected for the single-seed crop. Tune `points_per_side`, `pred_iou_thresh`,

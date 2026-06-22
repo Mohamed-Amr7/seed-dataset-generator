@@ -75,3 +75,44 @@ docker compose -f docker/compose.gpu.yaml run --rm multiseedgen \
 > Installing the toolkit **also unblocks seed-bank's prod GPU worker**
 > (`compose.prod.yaml`, target `runtime-gpu`), which currently can't acquire a
 > GPU on this box and falls back to the CPU image.
+
+---
+
+## Path 3 — opt-in SAM image (`--segment sam`)
+
+SAM needs `torch` + `segment-anything`, which are heavy, so they live in a
+**separate, opt-in image** (`docker/Dockerfile.sam`, `python:3.12-slim` — PyTorch
+has no Python 3.14 wheels, so it can't go on the default GPU image). The default
+image stays light and torch-free; you only build this when you want SAM.
+
+```bash
+# 1) download a checkpoint once (vit_b ~358 MB fits a 6 GB GPU / runs on CPU):
+mkdir -p models && curl -fL -o models/sam_vit_b_01ec64.pth \
+  https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth
+
+# 2) build + run the opt-in SAM image (CPU torch by default — no toolkit needed):
+docker compose -f docker/compose.gpu.yaml --profile sam up --build multiseedgen-sam
+#    -> Web UI on http://localhost:8001  (the default service still uses :8000)
+
+# or a batch CLI run with SAM:
+docker compose -f docker/compose.gpu.yaml --profile sam run --rm multiseedgen-sam \
+    python -m multiseedgen --sources /data/seeds --out /data/out --num-images 2000 \
+    --segment sam --sam-checkpoint models/sam_vit_b_01ec64.pth --sam-model-type vit_b
+```
+
+The `sam` compose **profile** is the opt-in switch: a plain
+`docker compose -f docker/compose.gpu.yaml up` ignores `multiseedgen-sam`
+entirely, so the default path never builds torch.
+
+Notes:
+- **CPU by default.** The SAM service has **no GPU reservation** because a device
+  reservation fails the run without the NVIDIA Container Toolkit. For GPU SAM,
+  install the toolkit (Path 2), rebuild with a CUDA torch wheel index
+  (`--build-arg TORCH_INDEX=https://download.pytorch.org/whl/cu124`), and add a
+  `deploy.reservations.devices` block to the `multiseedgen-sam` service. vit_b fits
+  the 6 GB card.
+- **Checkpoint path.** `--sam-checkpoint` is resolved against the container WORKDIR
+  `/app`; the compose service mounts the repo `models/` at `/app/models`, so the
+  relative `models/sam_vit_b_01ec64.pth` above works as-is.
+- The SAM image is ~2–2.6 GB (CPU torch) vs the ~light default — which is exactly
+  why it is kept opt-in.
