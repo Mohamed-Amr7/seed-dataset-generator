@@ -70,6 +70,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     g = p.add_argument_group("per-seed augmentation")
     g.add_argument("--max-rotation", type=float, default=180.0)
+    g.add_argument("--aug-shear", type=float, default=0.0,
+                   help="max per-seed shear in degrees (0 = off); applied pre-label "
+                        "on the cut-out so boxes stay correct")
     g.add_argument("--no-flip", dest="flip", action="store_false")
     g.add_argument("--jitter-hue", type=float, default=5.0)
     g.add_argument("--jitter-sat", type=float, default=0.15)
@@ -117,6 +120,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="add shot (Poisson) noise (needs --degrade)")
     g.add_argument("--jpeg-quality-min", type=int, default=95)
     g.add_argument("--jpeg-quality-max", type=int, default=95)
+    g.add_argument("--aug-gamma", type=float, default=0.0,
+                   help="max random gamma jitter on the composite (needs --degrade); "
+                        "draws uniform(1-g, 1+g). Simulates lighting shift")
     g.add_argument("--blur-max-sigma", type=float, default=0.0,
                    help="max defocus gaussian sigma (needs --degrade)")
     g.add_argument("--motion-blur-max", type=int, default=0,
@@ -154,14 +160,65 @@ def build_parser() -> argparse.ArgumentParser:
                    help="recompute and overwrite cached cut-outs")
     g.add_argument("--segment-map", type=Path, default=None,
                    help="JSON/CSV manifest of per-source segmentation overrides")
+    g.add_argument("--morph-kernel", type=int, default=5,
+                   help="ellipse kernel px for classical mask cleanup "
+                        "(config: segmentation.grabcut.morph_kernel)")
+    g.add_argument("--grabcut-iters", type=int, default=5,
+                   help="grabcut: GrabCut iterations (segmentation.grabcut.iterations)")
+    g.add_argument("--grabcut-rect-margin", type=float, default=0.06,
+                   help="grabcut: init-rect inset as fraction of min(h,w)")
+    g.add_argument("--grabcut-min-object-area", type=float, default=0.0,
+                   help="grabcut: drop masks whose area is below this frame fraction")
+    g.add_argument("--otsu-blur-kernel", type=int, default=0,
+                   help="otsu: pre-threshold gaussian blur kernel px (0 = off)")
+    g.add_argument("--otsu-threshold-adjustment", type=int, default=0,
+                   help="otsu: signed offset added to the computed Otsu threshold")
+    g.add_argument("--rembg-model", default=None,
+                   help="u2net: rembg model name (default = rembg's u2net)")
     g.add_argument("--sam-checkpoint", type=Path, default=None,
                    help="path to a SAM checkpoint (enables --segment sam; optional)")
+    g.add_argument("--sam-model-type", default="vit_b",
+                   choices=["vit_h", "vit_l", "vit_b"],
+                   help="sam: backbone (vit_b ~358MB fits a 6GB GPU; vit_h ~2.4GB)")
+    g.add_argument("--sam-prompt-type", default="automatic",
+                   choices=["automatic", "box", "points"],
+                   help="sam: prompt mode for the single-seed crop")
+    g.add_argument("--sam-points-per-side", type=int, default=32,
+                   help="sam(automatic): mask-generator grid density")
+    g.add_argument("--sam-pred-iou-thresh", type=float, default=0.88,
+                   help="sam(automatic): predicted-IoU quality filter")
+    g.add_argument("--sam-stability-score-thresh", type=float, default=0.95,
+                   help="sam(automatic): stability-score quality filter")
     g.add_argument("--jobs", type=int, default=-1,
                    help="segmentation worker processes; -1 = all cores, 1 = serial")
     g.add_argument("--gpu-seg-jobs", type=int, default=4,
                    help="max concurrent GPU rembg sessions when --rembg-provider "
                         "resolves to CUDA (bounds VRAM; default 4 ~= 3.7GB on a 6GB card)")
     g.add_argument("--max-sources", type=int, default=0, help="0 = use all")
+
+    g = p.add_argument_group("data split")
+    g.add_argument("--val-seed-holdout", type=float, default=0.0,
+                   help="fraction of SOURCE seeds reserved for val only (prevents "
+                        "data leakage: a held-out seed never appears in train). "
+                        "0 = legacy behaviour (both splits share every seed)")
+    g.add_argument("--val-seeds", nargs="+", default=None,
+                   help="globs of source files reserved for val (e.g. '*_holdout*'); "
+                        "overrides --val-seed-holdout when given")
+
+    g = p.add_argument_group("sampling")
+    g.add_argument("--class-balanced", action="store_true",
+                   help="sample a class uniformly first, then a seed within it "
+                        "(counters source-count imbalance across classes)")
+    g.add_argument("--class-probs", nargs="+", type=float, default=None,
+                   help="explicit per-class sampling weights, in class-id order "
+                        "(implies --class-balanced)")
+
+    g = p.add_argument_group("export")
+    g.add_argument("--extra-annotations", action="store_true",
+                   help="add per-annotation seed source/dims/scale/method to COCO")
+    g.add_argument("--multilabel-csv", action="store_true",
+                   help="write multilabel.csv (one row/image, per-class counts) "
+                        "alongside the dataset")
 
     g = p.add_argument_group("performance")
     g.add_argument("--workers", type=int, default=0,
@@ -196,6 +253,112 @@ def _config_defaults() -> dict:
 
 
 
+# Nested config sections (the checklist's layout) -> flat Config field names. The
+# config FILE may group settings as e.g. `segmentation: {method:, grabcut: {...}}`;
+# _normalize_nested flattens that onto the flat Config below. Legacy flat keys keep
+# working unchanged (none of these SECTION names are themselves Config fields, so a
+# dict under one is unambiguously a nested section).
+_NESTED_MAP: Dict[str, Any] = {
+    "segmentation": {
+        "method": "segment",
+        "bg_tolerance": "bg_tolerance",
+        "conf_thresh": "seg_conf_thresh",
+        "seg_conf_thresh": "seg_conf_thresh",
+        "strip_shadow": "strip_shadow",
+        "shadow_sat_max": "shadow_sat_max",
+        "segment_map": "segment_map",
+        "morph_kernel": "morph_kernel",
+        "grabcut": {
+            "iterations": "grabcut_iters",
+            "iters": "grabcut_iters",
+            "rect_margin": "grabcut_rect_margin",
+            "morph_kernel": "morph_kernel",
+            "min_object_area": "grabcut_min_object_area",
+        },
+        "otsu": {
+            "blur_kernel": "otsu_blur_kernel",
+            "threshold_adjustment": "otsu_threshold_adjustment",
+        },
+        "u2net": {
+            "model_path": "rembg_model",
+            "model": "rembg_model",
+            "device": "rembg_provider",
+            "provider": "rembg_provider",
+            "fallback": "rembg_fallback",
+        },
+        "sam": {
+            "checkpoint": "sam_checkpoint",
+            "model_type": "sam_model_type",
+            "prompt_type": "sam_prompt_type",
+            "points_per_side": "sam_points_per_side",
+            "pred_iou_thresh": "sam_pred_iou_thresh",
+            "stability_score_thresh": "sam_stability_score_thresh",
+        },
+    },
+    "split": {
+        "val_split": "val_split",
+        "val_seed_holdout": "val_seed_holdout",
+        "val_seeds": "val_seeds",
+    },
+    "sampling": {
+        "class_balanced": "class_balanced",
+        "class_probs": "class_probs",
+    },
+    "augmentation": {
+        "gamma": "aug_gamma",
+        "shear": "aug_shear",
+        "rotation": "max_rotation",
+        "max_rotation": "max_rotation",
+        "flip": "flip",
+        "jitter_hue": "jitter_hue",
+        "jitter_sat": "jitter_sat",
+        "jitter_val": "jitter_val",
+        "edge_feather": "edge_feather",
+    },
+    "export": {
+        "format": "fmt",
+        "fmt": "fmt",
+        "masks": "masks",
+        "extra_annotations": "extra_annotations",
+        "multilabel_csv": "multilabel_csv",
+    },
+}
+
+
+def _normalize_nested(data: dict) -> dict:
+    """Flatten any nested config sections (see _NESTED_MAP) onto flat field names.
+    Flat keys pass through untouched. Setting both a flat key and its nested twin to
+    different values in one file is a conflict (fail fast rather than silently pick)."""
+    out: dict = {}
+
+    def assign(field: str, value: Any, where: str) -> None:
+        if field in out and out[field] != value:
+            sys.exit(f"config: {where} conflicts with an earlier value for {field!r}")
+        out[field] = value
+
+    def walk(block: dict, spec: dict, prefix: str) -> None:
+        for kk, vv in block.items():
+            key = str(kk).replace("-", "_")
+            target = spec.get(key)
+            if isinstance(target, dict):
+                if not isinstance(vv, dict):
+                    sys.exit(f"config: {prefix}.{kk} must be a mapping")
+                walk(vv, target, f"{prefix}.{kk}")
+            elif isinstance(target, str):
+                assign(target, vv, f"{prefix}.{kk}")
+            else:
+                sys.exit(f"unknown config key: {prefix}.{kk}")
+
+    for k, v in data.items():
+        kk = str(k).replace("-", "_")
+        spec = _NESTED_MAP.get(kk)
+        if spec is not None and isinstance(v, dict):
+            walk(v, spec, kk)
+        else:
+            assign(kk, v, kk)
+    return out
+
+
 def _load_config_file(path: Path) -> dict:
     if not path.exists():
         sys.exit(f"--config file not found: {path}")
@@ -211,6 +374,7 @@ def _load_config_file(path: Path) -> dict:
     # a run_config.yaml manifest nests the settings under 'config:'
     if "config" in data and isinstance(data["config"], dict):
         data = data["config"]
+    data = _normalize_nested(data)          # accept the checklist's nested layout
     valid = {f.name for f in dataclass_fields(Config)}
     out: dict = {}
     for k, v in data.items():
@@ -232,6 +396,10 @@ def _coerce_config(d: dict) -> dict:
             out[k] = Path(v)
     if isinstance(out.get("backgrounds"), str):
         out["backgrounds"] = [out["backgrounds"]]
+    if isinstance(out.get("val_seeds"), str):
+        out["val_seeds"] = [out["val_seeds"]]
+    if out.get("class_probs") is not None:
+        out["class_balanced"] = True          # explicit weights imply balanced mode
     if out.get("fmt") == "yolo-seg":
         out["masks"] = True
     return out

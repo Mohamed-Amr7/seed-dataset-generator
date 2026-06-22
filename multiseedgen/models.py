@@ -29,6 +29,7 @@ class Config:
 
     # per-seed augmentation
     max_rotation: float = 180.0   # degrees, applied as uniform(-r, +r)
+    aug_shear: float = 0.0        # max per-seed shear in degrees (0 = off); label-safe
     flip: bool = True
     jitter_hue: float = 5.0       # degrees (OpenCV hue is 0..180)
     jitter_sat: float = 0.15      # +/- fraction
@@ -76,7 +77,20 @@ class Config:
     use_cache: bool = True
     refresh_cache: bool = False
     segment_map: Optional[Path] = None    # per-source method override manifest
+    # per-method segmentation parameters (config: segmentation.<method>.<param>)
+    morph_kernel: int = 5             # ellipse kernel px for mask cleanup (classical)
+    grabcut_iters: int = 5            # grabcut: GrabCut iterations
+    grabcut_rect_margin: float = 0.06  # grabcut: init-rect inset as frac of min(h,w)
+    grabcut_min_object_area: float = 0.0  # grabcut: drop masks below this frame frac
+    otsu_blur_kernel: int = 0         # otsu: pre-threshold gaussian blur kernel (0=off)
+    otsu_threshold_adjustment: int = 0  # otsu: +/- offset added to the Otsu threshold
+    rembg_model: Optional[str] = None  # u2net: rembg model name (None = rembg default)
     sam_checkpoint: Optional[Path] = None  # enables the (optional) SAM path
+    sam_model_type: str = "vit_b"     # sam: vit_h | vit_l | vit_b (vit_b fits 6GB GPU)
+    sam_prompt_type: str = "automatic"  # sam: automatic | box | points
+    sam_points_per_side: int = 32     # sam(automatic): grid density
+    sam_pred_iou_thresh: float = 0.88   # sam(automatic): predicted-IoU filter
+    sam_stability_score_thresh: float = 0.95  # sam(automatic): stability filter
     jobs: int = -1                    # segmentation workers; -1 = all cores
     gpu_seg_jobs: int = 4             # max concurrent GPU rembg sessions (VRAM cap;
                                       # ~3.7GB peak on a 6GB card, verified)
@@ -96,6 +110,7 @@ class Config:
     poisson_noise: bool = False
     jpeg_quality_min: int = 95
     jpeg_quality_max: int = 95
+    aug_gamma: float = 0.0        # max random gamma jitter on the composite (0 = off)
     blur_max_sigma: float = 0.0
     motion_blur_max: int = 0
     vignette: float = 0.0
@@ -103,7 +118,17 @@ class Config:
 
     # output
     class_mode: str = "single"    # "single" | "subfolders"
-    val_split: float = 0.15
+    val_split: float = 0.15       # fraction of generated IMAGES that go to val
+    # seed-level hold-out (prevents data leakage: a source seed used for val is
+    # never used for train). 0 = legacy behaviour (both splits share all seeds).
+    val_seed_holdout: float = 0.0     # fraction of SOURCE seeds reserved for val
+    val_seeds: Optional[List[str]] = None  # globs of source files reserved for val
+    # class-balanced scene sampling (config: sampling.*)
+    class_balanced: bool = False  # sample a class first (uniform), then a seed in it
+    class_probs: Optional[List[float]] = None  # per-class weights (by class id order)
+    # export extras (config: export.*)
+    extra_annotations: bool = False   # add seed source/dims/scale/method to COCO anns
+    multilabel_csv: bool = False      # write a per-image multi-label CSV alongside COCO
     fmt: str = "yolo"             # "yolo" | "coco" | "both" | "yolo-seg"
     masks: bool = False           # compute/export per-seed visible polygons
     img_ext: str = "jpg"
@@ -123,6 +148,9 @@ class Config:
 class Seed:
     rgba: np.ndarray   # BGRA uint8
     class_id: int
+    source: str = ""        # source-file rel path (provenance / extra_annotations)
+    method: str = ""        # segmentation method that produced this cut-out
+    split: str = "both"     # "train" | "val" | "both" (seed-level hold-out)
 
 
 
