@@ -1,0 +1,106 @@
+# =============================================================================
+# MultiSeedGen — fully-commented example config
+# =============================================================================
+# Run with:   python seedgen.py --config configs/example.yaml
+# Every CLI flag has a config key (dashes or underscores both work); CLI flags
+# override file values. This file uses the NESTED layout for the grouped sections
+# (segmentation / split / sampling / augmentation / export); the equivalent flat
+# keys (e.g. `segment: otsu`, `aug_gamma: 0.3`) are also accepted.
+# -----------------------------------------------------------------------------
+
+# ---- I/O ----
+sources: seeds/Root          # folder of single-seed source images
+out: datasets/example        # output dataset directory
+class_mode: subfolders       # "single" | "subfolders" (one class per subdirectory)
+num_images: 200              # total scenes to generate (train + val)
+img_size: 640                # square canvas size
+img_ext: jpg                 # "jpg" | "png"
+seed: 7                      # master RNG seed (fully reproducible)
+
+# ---- scene composition ----
+min_seeds: 8                 # seeds per scene drawn uniformly in [min, max]
+max_seeds: 30
+scale_min: 0.05              # seed long-side as a fraction of the canvas
+scale_max: 0.16
+overlap_mode: limit          # "allow" | "limit" (cap pairwise box IoU)
+max_iou: 0.15                # only used when overlap_mode: limit
+min_visibility: 0.40         # fraction of a seed that must land on-canvas
+min_visible_occluded: 0.30   # fraction left unoccluded to keep the label
+min_box_px: 8                # drop boxes whose shorter side is below this
+
+# ---- segmentation (choose ONE method; only its sub-block is used) ----
+segmentation:
+  method: auto               # auto | alpha | threshold | otsu | grabcut | rembg | sam
+  bg_tolerance: 28.0         # threshold/auto: colour distance from the border = background
+  conf_thresh: 0.55          # auto: cut-outs below this confidence route to rembg / skip
+  strip_shadow: true         # auto/classical: drop dark cast-shadow lobes
+  shadow_sat_max: 0.35
+  morph_kernel: 5            # ellipse kernel (px) for classical mask cleanup
+
+  grabcut:                   # used when method: grabcut
+    iterations: 5
+    rect_margin: 0.06        # init-rect inset as a fraction of min(h, w)
+    min_object_area: 0.0     # drop masks below this frame fraction (0 = off)
+
+  otsu:                      # used when method: otsu
+    blur_kernel: 0           # pre-threshold gaussian blur kernel px (0 = off)
+    threshold_adjustment: 0  # signed offset added to the Otsu threshold
+
+  u2net:                     # used when method: rembg (U^2-Net via rembg)
+    device: auto             # auto | cuda | cpu (onnxruntime execution provider)
+    # model_path: u2net      # rembg model name (default = rembg's u2net)
+
+  sam:                       # used when method: sam (needs torch + segment-anything)
+    # checkpoint: models/sam_vit_b_01ec64.pth   # REQUIRED to enable SAM (see AUGMENTATION.md)
+    model_type: vit_b        # vit_h (~2.4GB) | vit_l (~1.2GB) | vit_b (~358MB, fits 6GB GPU)
+    prompt_type: automatic   # automatic | box | points
+    points_per_side: 32      # automatic-mode grid density
+    pred_iou_thresh: 0.88
+    stability_score_thresh: 0.95
+
+# ---- backgrounds ----
+backgrounds: [solid, gradient, noise]   # synthetic types when no real textures given
+# textures: textures/                   # folder of REAL background photos (preferred)
+bg_from_sources: true        # inpaint the seed out of sources to recover the real surface
+neg_frac: 0.10               # fraction of background-only images (suppress false positives)
+
+# ---- realism + augmentation (photometric; need degrade: true) ----
+degrade: true                # master switch for camera-matched degradation
+noise_sigma: 3.0             # gaussian sensor noise
+poisson_noise: false         # shot noise
+blur_max_sigma: 0.5          # max defocus blur
+jpeg_quality_min: 80
+jpeg_quality_max: 95
+vignette: 0.0
+
+augmentation:
+  gamma: 0.2                 # random tone curve uniform(1-g, 1+g): lighting robustness
+  shear: 4.0                 # max per-seed shear (deg); label-safe (box recomputed)
+  rotation: 180.0            # max per-seed rotation (deg) — alias of max_rotation
+  jitter_hue: 5.0
+  jitter_sat: 0.15
+  jitter_val: 0.15
+
+# ---- train/val split + data-leakage hold-out ----
+split:
+  val_split: 0.15            # fraction of generated IMAGES that go to val
+  val_seed_holdout: 0.20     # fraction of SOURCE seeds reserved for val only
+  # val_seeds: ["*_holdout*"]  # OR: globs of source files reserved for val
+                             # (a held-out seed never appears in a train image)
+
+# ---- class-balanced sampling (counters source-count imbalance) ----
+sampling:
+  class_balanced: true       # pick a class first, then a seed within it
+  # class_probs: [1, 1, 2]   # optional explicit per-class weights (by class id)
+
+# ---- export ----
+export:
+  format: both               # yolo | coco | both | yolo-seg
+  masks: true                # per-seed visible polygons (auto-on for yolo-seg)
+  extra_annotations: true    # add seed source/dims/scale/method to each COCO annotation
+  multilabel_csv: true       # write multilabel.csv (per-image, per-class counts)
+
+# ---- QA / provenance ----
+qa_report: true              # qa/report.md + charts
+visualize_count: 12          # annotated previews from the exported labels
+provenance: true             # provenance_<split>.jsonl mapping boxes -> source seeds

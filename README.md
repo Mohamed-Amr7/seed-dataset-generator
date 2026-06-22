@@ -50,6 +50,26 @@ preserves the original `python seedgen.py ...` entry point.
 `configs/` holds ready-to-run dataset definitions: `root.yaml` (multi-class
 spice/seed set), `test.yaml`, `wheat.yaml`, and `soybean_healthy.yaml`. Each sets
 sources, output dir, scene/seed counts, segmentation backend, and export format.
+[`configs/example.yaml`](configs/example.yaml) is a fully-commented reference that
+exercises every option, including the nested per-method segmentation sections.
+
+Config files accept either flat keys or the grouped/nested layout
+(`segmentation:`, `split:`, `sampling:`, `augmentation:`, `export:`); CLI flags
+override file values.
+
+## Segmentation & augmentation guide
+
+[`AUGMENTATION.md`](AUGMENTATION.md) maps every known data-quality problem to the
+option that solves it (imbalance, leakage, lighting shift, …), compares the
+segmentation backends (`auto`/`threshold`/`otsu`/`grabcut`/`rembg`/`sam`), and
+documents the optional SAM integration (prompt modes, checkpoint sizes, and how to
+enable it). Notable data-quality controls:
+
+- **No train/val leakage** — `split.val_seed_holdout` reserves source seeds for
+  validation so a seed never appears in both splits.
+- **Class-balanced sampling** — `sampling.class_balanced` / `class_probs`.
+- **Multi-label CSV + COCO `extra_annotations`** — `export.multilabel_csv`,
+  `export.extra_annotations`.
 
 ## Data
 
