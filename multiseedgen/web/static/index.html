@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MultiSeedGen</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>MultiSeedGen <span id="version" class="muted"></span></h1>
+    <nav>
+      <button class="tab active" data-tab="run">Run</button>
+      <button class="tab" data-tab="seg">Segmentation tuner</button>
+      <button class="tab" data-tab="browse">Dataset browser</button>
+      <button class="tab" data-tab="config">Config</button>
+    </nav>
+  </header>
+
+  <!-- RUN -->
+  <section id="run" class="panel active">
+    <div class="cols">
+      <div class="form-col">
+        <h2>Parameters</h2>
+        <div class="seg-controls preset-row">
+          <label>Start from <select id="preset-sel"></select></label>
+          <span class="hint">Recommended defaults are pre-filled — set <code>sources</code> and <code>out</code>, then Generate.</span>
+        </div>
+        <div id="form"></div>
+        <div class="actions">
+          <button id="run-btn" class="primary">Generate dataset</button>
+          <button id="stop-btn" disabled>Stop</button>
+        </div>
+      </div>
+      <div class="log-col">
+        <h2>Run log <span id="run-status" class="badge"></span></h2>
+        <pre id="run-log" class="log"></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- SEG TUNER -->
+  <section id="seg" class="panel">
+    <h2>Segmentation tuner</h2>
+    <p class="muted">Renders cut-outs on a magenta checkerboard and reports per-source
+      confidence + skip reasons. Adjust the threshold / provider and re-check before a full run.</p>
+    <div class="seg-controls">
+      <label>Sources <input id="seg-sources" type="text" placeholder="seeds/Test/images"></label>
+      <button id="seg-sources-browse" class="browse-btn" type="button">Browse…</button>
+      <label>Method
+        <select id="seg-method">
+          <option>auto</option><option>rembg</option><option>otsu</option>
+          <option>grabcut</option><option>threshold</option><option>alpha</option>
+        </select></label>
+      <label>conf-thresh <input id="seg-thresh" type="number" step="0.01" value="0.55"></label>
+      <label>rembg provider
+        <select id="seg-provider"><option>auto</option><option>cuda</option><option>cpu</option></select></label>
+      <label># seeds <input id="seg-n" type="number" value="24"></label>
+      <button id="seg-btn" class="primary">Check</button>
+    </div>
+    <div id="seg-report" class="report"></div>
+    <div id="seg-grid" class="grid"></div>
+    <pre id="seg-log" class="log small"></pre>
+  </section>
+
+  <!-- BROWSER -->
+  <section id="browse" class="panel">
+    <h2>Dataset browser</h2>
+    <div class="seg-controls">
+      <label>Datasets root <input id="ds-root" type="text" placeholder="(data root)"></label>
+      <button id="ds-root-browse" class="browse-btn" type="button">Browse…</button>
+      <button id="ds-scan">Scan</button>
+      <select id="ds-list"></select>
+      <select id="ds-split"><option>train</option><option>val</option></select>
+    </div>
+    <div id="ds-info" class="report"></div>
+    <div class="viewer">
+      <button id="ds-prev">&larr;</button>
+      <img id="ds-img" alt="(select a dataset)">
+      <button id="ds-next">&rarr;</button>
+    </div>
+    <div id="ds-caption" class="muted"></div>
+    <h3>QA charts</h3>
+    <div id="ds-qa" class="grid"></div>
+    <div id="ds-seg" class="report"></div>
+  </section>
+
+  <!-- CONFIG -->
+  <section id="config" class="panel">
+    <h2>Config save / load</h2>
+    <p class="muted">Round-trips with the CLI's <code>--config</code>. Save writes the
+      current Run form; Load fills the Run form from a JSON/YAML config or a run_config.yaml manifest.</p>
+    <div class="seg-controls">
+      <label>Path <input id="cfg-path" type="text" placeholder="/tmp/run_config.yaml" size="40"></label>
+      <button id="cfg-path-browse" class="browse-btn" type="button">Browse…</button>
+      <button id="cfg-save" class="primary">Save current form</button>
+      <button id="cfg-load">Load into form</button>
+    </div>
+    <div id="cfg-msg" class="report"></div>
+  </section>
+
+  <!-- PATH PICKER MODAL -->
+  <div id="fs-overlay" class="fs-overlay">
+    <div class="fs-modal">
+      <h2 id="fs-title">Select</h2>
+      <div class="fs-bar">
+        <button id="fs-up">&uarr; Up</button>
+        <span id="fs-path" class="fs-path muted"></span>
+      </div>
+      <div id="fs-list" class="fs-list"></div>
+      <div id="fs-newrow" class="fs-newrow">
+        <label><span id="fs-newlabel">New subfolder</span> <input id="fs-newname" type="text" placeholder="(optional) e.g. soybean_healthy"></label>
+      </div>
+      <div class="fs-actions">
+        <button id="fs-select" class="primary">Select this folder</button>
+        <button id="fs-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
