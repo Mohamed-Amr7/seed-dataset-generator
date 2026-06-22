@@ -21,9 +21,12 @@ from .optdeps import Parallel, _HAVE_JOBLIB, _tqdm, delayed
 # --------------------------------------------------------------------------- #
 # Segmentation                                                                #
 # --------------------------------------------------------------------------- #
-def _largest_component_fill(mask: np.ndarray) -> np.ndarray:
-    """Clean a binary mask: morphology, keep the biggest blob, fill holes."""
-    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+def _largest_component_fill(mask: np.ndarray, ksize: int = 5) -> np.ndarray:
+    """Clean a binary mask: morphology, keep the biggest blob, fill holes.
+    ``ksize`` is the ellipse structuring-element size (default 5 = legacy behaviour;
+    configurable per classical method via cfg.morph_kernel)."""
+    ksize = max(1, int(ksize))
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ksize, ksize))
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, k, iterations=1)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, k, iterations=2)
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -253,9 +256,16 @@ def _auto_mask(bgr: np.ndarray, tol: float) -> Optional[np.ndarray]:
 
 
 
-def _mask_otsu(bgr: np.ndarray) -> np.ndarray:
+def _mask_otsu(bgr: np.ndarray, blur_kernel: int = 0,
+               threshold_adjustment: int = 0) -> np.ndarray:
     gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-    _, m = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    if blur_kernel and int(blur_kernel) > 0:
+        kk = int(blur_kernel) | 1                   # gaussian needs an odd kernel
+        gray = cv2.GaussianBlur(gray, (kk, kk), 0)
+    thr, m = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    if threshold_adjustment:                        # re-threshold at Otsu +/- offset
+        t2 = float(np.clip(thr + threshold_adjustment, 0, 255))
+        _, m = cv2.threshold(gray, t2, 255, cv2.THRESH_BINARY)
     # assume the seed is the darker-or-lighter minority; flip if bg got selected
     if m.mean() > 127:
         m = 255 - m
@@ -263,15 +273,17 @@ def _mask_otsu(bgr: np.ndarray) -> np.ndarray:
 
 
 
-def _mask_grabcut(bgr: np.ndarray) -> np.ndarray:
+def _mask_grabcut(bgr: np.ndarray, iters: int = 5,
+                  rect_margin: float = 0.06) -> np.ndarray:
     h, w = bgr.shape[:2]
     mask = np.zeros((h, w), np.uint8)
-    inset = max(2, int(0.06 * min(h, w)))
-    rect = (inset, inset, w - 2 * inset, h - 2 * inset)
+    inset = max(2, int(float(rect_margin) * min(h, w)))
+    rect = (inset, inset, max(1, w - 2 * inset), max(1, h - 2 * inset))
     bgdModel = np.zeros((1, 65), np.float64)
     fgdModel = np.zeros((1, 65), np.float64)
     try:
-        cv2.grabCut(bgr, mask, rect, bgdModel, fgdModel, 5, cv2.GC_INIT_WITH_RECT)
+        cv2.grabCut(bgr, mask, rect, bgdModel, fgdModel, max(1, int(iters)),
+                    cv2.GC_INIT_WITH_RECT)
     except cv2.error:
         return np.zeros((h, w), np.uint8)
     return np.where((mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD), 255, 0).astype(np.uint8)
@@ -412,19 +424,54 @@ def _crop_to_alpha(bgr: np.ndarray, alpha: np.ndarray, pad: int = 2) -> Optional
 
 
 
+_SAM_SEGMENTER = None       # process-global SAMSegmenter (survives the loky fork)
+
+
 def _mask_sam(bgr: np.ndarray, cfg: "Config") -> Optional[np.ndarray]:
-    """Optional SAM / SAM2 path. Import-guarded stub: returns None unless torch +
-    segment_anything are installed AND a checkpoint is configured. We deliberately
-    do NOT require torch; on this CPU-only setup rembg is the recommended learned
-    path. The seam exists so SAM can be wired in later without restructuring."""
+    """Optional SAM path. Import-guarded: returns None (callers then fall back) unless
+    a checkpoint is configured AND torch + segment_anything are installed. Returns a
+    0/255 mask for the seed, matching the rembg alpha contract. The segmenter is built
+    once per process and reused. Prompt mode is cfg.sam_prompt_type."""
+    global _SAM_SEGMENTER
     if getattr(cfg, "sam_checkpoint", None) is None:
         return None
-    try:                                            # pragma: no cover
-        import torch  # noqa: F401
-        from segment_anything import sam_model_registry, SamPredictor  # noqa: F401
-    except Exception:
+    if _SAM_SEGMENTER is None:
+        try:
+            from .sam_segment import SAMSegmenter, sam_available
+        except Exception:
+            return None
+        if not sam_available():
+            print("  [warn] --segment sam needs torch + segment-anything "
+                  "(pip install segment-anything torch); skipping", file=sys.stderr)
+            return None
+        try:
+            _SAM_SEGMENTER = SAMSegmenter(
+                checkpoint=cfg.sam_checkpoint, model_type=cfg.sam_model_type,
+                points_per_side=cfg.sam_points_per_side,
+                pred_iou_thresh=cfg.sam_pred_iou_thresh,
+                stability_score_thresh=cfg.sam_stability_score_thresh)
+            print(f"  [sam] loaded {cfg.sam_model_type} on {_SAM_SEGMENTER.device}",
+                  file=sys.stderr)
+        except Exception as e:                      # bad checkpoint / OOM / etc.
+            print(f"  [warn] SAM load failed ({e}); skipping", file=sys.stderr)
+            return None
+
+    rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+    h, w = bgr.shape[:2]
+    pt = (cfg.sam_prompt_type or "automatic").lower()
+    try:
+        if pt == "box":
+            inset = max(2, int(float(cfg.grabcut_rect_margin) * min(h, w)))
+            mask, _ = _SAM_SEGMENTER.segment_with_box(
+                rgb, [inset, inset, max(1, w - 2 * inset), max(1, h - 2 * inset)])
+        elif pt == "points":
+            mask, _ = _SAM_SEGMENTER.segment_with_points(rgb, [(w // 2, h // 2)], [1])
+        else:                                       # automatic (default)
+            mask, _ = _SAM_SEGMENTER.segment_automatic(rgb)
+    except Exception as e:                          # pragma: no cover
+        print(f"  [warn] SAM inference failed ({e}); skipping", file=sys.stderr)
         return None
-    return None                                     # deliberately unimplemented
+    return mask if mask is not None and int((mask > 0).sum()) else None
 
 
 
@@ -484,14 +531,18 @@ def segment_seed(img: np.ndarray, cfg: Config,
             rep["skip_reason"] = "rembg_unavailable"
     else:                                           # otsu | grabcut | threshold
         if method == "otsu":
-            raw = _mask_otsu(bgr)
+            raw = _mask_otsu(bgr, cfg.otsu_blur_kernel, cfg.otsu_threshold_adjustment)
         elif method == "grabcut":
-            raw = _mask_grabcut(bgr)
+            raw = _mask_grabcut(bgr, cfg.grabcut_iters, cfg.grabcut_rect_margin)
         else:
             raw = _mask_border_color(bgr, tol)
-        clean = _largest_component_fill(raw)
+        clean = _largest_component_fill(raw, cfg.morph_kernel)
         rep.update(_mask_quality(bgr, raw, clean))
         rep["method"] = method
+        if (method == "grabcut" and cfg.grabcut_min_object_area > 0
+                and float((clean > 0).mean()) < float(cfg.grabcut_min_object_area)):
+            clean = None                            # below the configured min area
+            rep["skip_reason"] = "below_min_object_area"
 
     # ---- confidence-gated rembg fallback (auto mode only) ----
     wanted_fallback = (is_auto and cfg.rembg_fallback
@@ -566,9 +617,9 @@ def extract_background(img: np.ndarray, cfg: Config,
     method = ov.get("method", cfg.segment)
     tol = float(ov.get("bg_tolerance", cfg.bg_tolerance))
     if method == "otsu":
-        mask = _mask_otsu(bgr)
+        mask = _mask_otsu(bgr, cfg.otsu_blur_kernel, cfg.otsu_threshold_adjustment)
     elif method == "grabcut":
-        mask = _mask_grabcut(bgr)
+        mask = _mask_grabcut(bgr, cfg.grabcut_iters, cfg.grabcut_rect_margin)
     elif method == "threshold":
         mask = _mask_border_color(bgr, tol)
     elif method in ("rembg", "sam"):
@@ -579,7 +630,7 @@ def extract_background(img: np.ndarray, cfg: Config,
         mask = _auto_mask(bgr, tol)
     if mask is None:
         return None
-    mask = _largest_component_fill(mask)
+    mask = _largest_component_fill(mask, cfg.morph_kernel)
     if int(mask.sum()) == 0:
         return bgr                          # no seed found; whole image is bg
 
@@ -614,6 +665,28 @@ def _seg_params_signature(cfg: Config, override: Optional[dict]) -> str:
     # device when rembg can actually be used (keeps pure-classical keys device-free).
     if cfg.rembg_fallback or method in ("rembg", "sam"):
         sig["rembg_device"] = _effective_rembg_provider(cfg.rembg_provider)
+    # per-method params only enter the key for the method that actually uses them, so
+    # tuning one method never invalidates another's cached cut-outs.
+    if method == "grabcut":
+        sig["grabcut_iters"] = int(cfg.grabcut_iters)
+        sig["grabcut_rect_margin"] = round(float(cfg.grabcut_rect_margin), 4)
+        sig["grabcut_min_object_area"] = round(float(cfg.grabcut_min_object_area), 4)
+        sig["morph_kernel"] = int(cfg.morph_kernel)
+    elif method == "otsu":
+        sig["otsu_blur_kernel"] = int(cfg.otsu_blur_kernel)
+        sig["otsu_threshold_adjustment"] = int(cfg.otsu_threshold_adjustment)
+        sig["morph_kernel"] = int(cfg.morph_kernel)
+    elif method == "threshold":
+        sig["morph_kernel"] = int(cfg.morph_kernel)
+    elif method == "sam":
+        sig["sam"] = {
+            "model_type": cfg.sam_model_type,
+            "prompt_type": cfg.sam_prompt_type,
+            "points_per_side": int(cfg.sam_points_per_side),
+            "pred_iou_thresh": round(float(cfg.sam_pred_iou_thresh), 4),
+            "stability_score_thresh": round(float(cfg.sam_stability_score_thresh), 4),
+            "checkpoint": str(cfg.sam_checkpoint) if cfg.sam_checkpoint else None,
+        }
     return json.dumps(sig, sort_keys=True)
 
 
@@ -800,6 +873,36 @@ def _segment_one(path_str: str, class_id: int, cfg: Config,
 
 
 
+def _assign_seed_splits(seeds: List[Seed], cfg: Config) -> None:
+    """Tag each Seed.split for seed-level train/val hold-out (prevents data leakage:
+    a source seed used in val is never used in train). Default (no val_seeds globs and
+    val_seed_holdout<=0): every seed stays 'both' -> legacy behaviour where both splits
+    share all seeds. With a hold-out the partition is per-class stratified, deterministic
+    in cfg.seed, and never empties a class from the train pool."""
+    val_globs = cfg.val_seeds or None
+    frac = float(cfg.val_seed_holdout or 0.0)
+    if not val_globs and frac <= 0.0:
+        return                                      # legacy: leave every seed "both"
+    if val_globs:
+        for s in seeds:
+            name = Path(s.source).name
+            is_val = any(fnmatch.fnmatch(s.source, g) or fnmatch.fnmatch(name, g)
+                         for g in val_globs)
+            s.split = "val" if is_val else "train"
+        return
+    by_class: Dict[int, List[int]] = {}
+    for i, s in enumerate(seeds):
+        by_class.setdefault(s.class_id, []).append(i)
+    rng = np.random.default_rng(int(cfg.seed))
+    for _cid, idxs in by_class.items():
+        order = list(idxs)
+        rng.shuffle(order)
+        n_val = min(int(round(frac * len(order))), max(0, len(order) - 1))
+        val_set = set(order[:n_val])                # keep >=1 per class in train
+        for i in order:
+            seeds[i].split = "val" if i in val_set else "train"
+
+
 def load_seeds(cfg: Config):
     """Read and segment every source image (in parallel, with a disk cache).
 
@@ -840,12 +943,16 @@ def load_seeds(cfg: Config):
     gpu_rembg = (_effective_rembg_provider(cfg.rembg_provider) == "cuda"
                  and (cfg.segment in ("rembg", "sam") or cfg.rembg_fallback
                       or cfg.segment_map is not None))
-    if gpu_rembg:
+    # SAM holds a full model per worker process (VRAM on GPU, large RAM on CPU), so it
+    # is capped like GPU rembg regardless of the onnxruntime provider.
+    heavy_sam = cfg.segment == "sam" and cfg.sam_checkpoint is not None
+    if gpu_rembg or heavy_sam:
         cap = max(1, int(cfg.gpu_seg_jobs))
         if jobs <= 0 or jobs > cap:
             jobs = cap
-        print(f"  [gpu] segmentation capped to {jobs} worker(s) to fit VRAM "
-              f"(--gpu-seg-jobs); GPU inference stays ~10x faster per image")
+        what = "SAM" if heavy_sam else "GPU rembg"
+        print(f"  [{'sam' if heavy_sam else 'gpu'}] segmentation capped to {jobs} "
+              f"worker(s) to fit memory (--gpu-seg-jobs); {what} stays faster per image")
 
     if _HAVE_JOBLIB and jobs != 1 and len(tasks) > 1:
         results: List[SegResult] = Parallel(n_jobs=jobs, backend="loky")(
@@ -858,7 +965,8 @@ def load_seeds(cfg: Config):
     source_bgs: List[np.ndarray] = []
     for r in results:
         if r.patch is not None and r.patch.shape[0] >= 4 and r.patch.shape[1] >= 4:
-            seeds.append(Seed(rgba=r.patch, class_id=r.class_id))
+            seeds.append(Seed(rgba=r.patch, class_id=r.class_id,
+                              source=r.source, method=r.report.get("method", "")))
             if cfg.bg_from_sources and r.background is not None:
                 source_bgs.append(r.background)
 
@@ -866,6 +974,12 @@ def load_seeds(cfg: Config):
         idx = np.random.default_rng(cfg.seed).choice(
             len(seeds), cfg.max_sources, replace=False)
         seeds = [seeds[i] for i in idx]
+
+    _assign_seed_splits(seeds, cfg)                 # seed-level train/val hold-out
+    n_val_seeds = sum(1 for s in seeds if s.split == "val")
+    if n_val_seeds:
+        print(f"  seed hold-out: {len(seeds) - n_val_seeds} train-only / "
+              f"{n_val_seeds} val-only source seed(s) (no overlap)")
 
     n_skip = sum(1 for r in results if r.report.get("skipped"))
     n_hit = sum(1 for r in results if r.cache_hit)
