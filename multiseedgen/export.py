@@ -71,14 +71,27 @@ def write_data_yaml(out: Path, class_names: List[str]) -> None:
 
 
 
-def write_coco(path: Path, records, class_names: List[str]) -> None:
+def _extra_annotation(pv: dict) -> dict:
+    """Flatten one provenance entry into a COCO `extra_annotations` payload: the
+    source seed file, the segmentation method that cut it out, and the per-placement
+    transform (scale/rotation/shear + original cut-out dims)."""
+    t = pv.get("transform") or {}
+    return {"source": pv.get("source"), "seg_method": pv.get("seg_method"),
+            "seed_index": pv.get("seed_index"), "scale": t.get("scale"),
+            "rotation": t.get("rotation"), "shear": t.get("shear"),
+            "orig_w": t.get("orig_w"), "orig_h": t.get("orig_h")}
+
+
+def write_coco(path: Path, records, class_names: List[str],
+               extra_annotations: bool = False) -> None:
     images, annotations = [], []
     ann_id = 1
     for img_id, rec in enumerate(records, start=1):
         file_name, W, H, labels = rec[0], rec[1], rec[2], rec[3]
         polys = rec[4] if len(rec) > 4 and rec[4] is not None else [None] * len(labels)
+        prov = rec[5] if len(rec) > 5 and rec[5] is not None else [None] * len(labels)
         images.append({"id": img_id, "file_name": file_name, "width": W, "height": H})
-        for (cls, x0, y0, x1, y1), pieces in zip(labels, polys):
+        for (cls, x0, y0, x1, y1), pieces, pv in zip(labels, polys, prov):
             ann = {"id": ann_id, "image_id": img_id, "category_id": int(cls) + 1,
                    "bbox": [int(x0), int(y0), int(x1 - x0), int(y1 - y0)], "iscrowd": 0}
             seg, area = [], 0
@@ -91,11 +104,32 @@ def write_coco(path: Path, records, class_names: List[str]) -> None:
             if seg:
                 ann["segmentation"] = seg
             ann["area"] = area if area > 0 else int((x1 - x0) * (y1 - y0))
+            if extra_annotations and pv is not None:
+                ann["extra_annotations"] = _extra_annotation(pv)
             annotations.append(ann)
             ann_id += 1
     categories = [{"id": i + 1, "name": n} for i, n in enumerate(class_names)]
     path.write_text(json.dumps(
         {"images": images, "annotations": annotations, "categories": categories}))
+
+
+def write_multilabel_csv(path: Path, rows, class_names: List[str]) -> None:
+    """Per-image multi-label CSV alongside COCO (for classifier training etc.):
+    `image,split,<class_0>,...,<class_n>` where each class column is the count of that
+    class in the image (0 = absent). `rows` is a list of (image_rel, split, [class_id]).
+    """
+    import csv
+    header = ["image", "split"] + list(class_names)
+    n = len(class_names)
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(header)
+        for image_rel, split, class_ids in rows:
+            counts = [0] * n
+            for c in class_ids:
+                if 0 <= int(c) < n:
+                    counts[int(c)] += 1
+            w.writerow([image_rel, split] + counts)
 
 
 

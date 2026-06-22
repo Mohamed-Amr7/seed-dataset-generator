@@ -13,7 +13,8 @@ import time
 from .compositing import generate_scene
 from .constants import IMG_EXTS
 from .degrade import _jpeg_quality
-from .export import write_coco, write_data_yaml, write_run_manifest, write_yolo_label, write_yolo_seg_label
+from .export import (write_coco, write_data_yaml, write_multilabel_csv,
+                     write_run_manifest, write_yolo_label, write_yolo_seg_label)
 from .models import Config, _QAStats
 from .optdeps import Parallel, _HAVE_JOBLIB, _tqdm, delayed
 from .qa import check_segmentation, make_previews, write_qa_report
@@ -118,10 +119,10 @@ def _render_one(cfg: Config, seeds: list, textures: list,
 
 def _render_one_disk(cfg: Config, assets_path: str, split: str, idx: int, seed_seq):
     """loky entry point: load the disk-staged assets once per worker process (memoized
-    in _ASSET_CACHE) and delegate to _render_one. The threading/serial paths skip this
-    and pass the parent's shared in-memory assets directly."""
-    seeds, textures = _load_assets(assets_path)
-    return _render_one(cfg, seeds, textures, split, idx, seed_seq)
+    in _ASSET_CACHE) and delegate to _render_one with the split's seed pool. The
+    threading/serial paths skip this and pass the parent's shared in-memory assets."""
+    pools, textures = _load_assets(assets_path)
+    return _render_one(cfg, pools[split], textures, split, idx, seed_seq)
 
 
 
@@ -136,7 +137,7 @@ def _write_result(cfg: Config, split: str, result, coco_store: dict) -> Tuple[in
         write_yolo_seg_label(cfg.out / split / "labels" / f"{split}_{idx:06d}.txt",
                              labels, polys, W, H)
     if cfg.fmt in ("coco", "both"):
-        coco_store[idx] = (f"{split}/images/{name}", W, H, labels, polys)
+        coco_store[idx] = (f"{split}/images/{name}", W, H, labels, polys, prov)
     return len(labels), int(is_neg)
 
 
@@ -173,6 +174,20 @@ def run(cfg: Config) -> None:
     n_val = int(round(cfg.num_images * cfg.val_split))
     n_train = cfg.num_images - n_val
     splits = {"train": n_train, "val": n_val}
+
+    # seed-level pools (data-leakage hold-out). With no hold-out every seed is "both",
+    # so both pools are the full set in the original order -> byte-identical output.
+    # Otherwise train and val draw from DISJOINT source seeds.
+    pools = {
+        "train": [s for s in seeds if s.split in ("train", "both")],
+        "val":   [s for s in seeds if s.split in ("val", "both")],
+    }
+    for sp, cnt in splits.items():
+        if cnt > 0 and not pools[sp]:
+            sys.exit(f"no seeds available for the '{sp}' split after hold-out "
+                     f"(val_seed_holdout={cfg.val_seed_holdout}, val_seeds={cfg.val_seeds})"
+                     f"; lower the hold-out or add more source seeds")
+
     want_labels = cfg.fmt in ("yolo", "both", "yolo-seg")
     for split in splits:
         (cfg.out / split / "images").mkdir(parents=True, exist_ok=True)
@@ -190,8 +205,8 @@ def run(cfg: Config) -> None:
     if backend == "loky":
         assets_path = str(cfg.out / ".assets.pkl")
         with open(assets_path, "wb") as f:
-            pickle.dump((seeds, textures), f, protocol=pickle.HIGHEST_PROTOCOL)
-        _ASSET_CACHE[assets_path] = (seeds, textures)
+            pickle.dump((pools, textures), f, protocol=pickle.HIGHEST_PROTOCOL)
+        _ASSET_CACHE[assets_path] = (pools, textures)
 
     parallel = _HAVE_JOBLIB and workers > 1
     desc = f"{workers} {backend} worker(s)" if parallel else "serial"
@@ -199,6 +214,7 @@ def run(cfg: Config) -> None:
           f"({n_train} train / {n_val} val), {desc}")
     coco_records = {"train": [], "val": []}
     qa = _QAStats() if cfg.qa_report else None
+    ml_rows: list = [] if cfg.multilabel_csv else None  # per-image multi-label rows
     total_boxes = 0
     total_neg = 0
     for split, count in splits.items():
@@ -207,6 +223,7 @@ def run(cfg: Config) -> None:
         seed_seqs = _scene_seeds(cfg.seed, split, count)
         coco_store: dict = {}
         prov_store: dict = {}
+        ml_store: dict = {}
         if parallel and count > 1:
             # batch several scenes per dispatch to amortize dispatch overhead
             batch = max(1, min(64, count // (workers * 4) or 1))
@@ -215,12 +232,12 @@ def run(cfg: Config) -> None:
                          for i in range(count))
             else:
                 cv2.setNumThreads(1)                # 1 cv2 thread/scene; joblib threads parallelize
-                tasks = (delayed(_render_one)(cfg, seeds, textures, split, i, seed_seqs[i])
+                tasks = (delayed(_render_one)(cfg, pools[split], textures, split, i, seed_seqs[i])
                          for i in range(count))
             gen = Parallel(n_jobs=workers, backend=backend, return_as="generator",
                            batch_size=batch)(tasks)
         else:
-            gen = (_render_one(cfg, seeds, textures, split, i, seed_seqs[i])
+            gen = (_render_one(cfg, pools[split], textures, split, i, seed_seqs[i])
                    for i in range(count))
         for result in _tqdm(gen, total=count, desc=split, unit="img"):
             nb, neg = _write_result(cfg, split, result, coco_store)
@@ -230,8 +247,13 @@ def run(cfg: Config) -> None:
                 qa.add(split, result)
             if cfg.provenance:
                 prov_store[result[0]] = (result[1], result[7])
+            if ml_rows is not None:                 # keyed by idx -> deterministic order
+                ml_store[result[0]] = (result[1], [int(l[0]) for l in result[4]])
         if cfg.fmt in ("coco", "both"):
             coco_records[split] = [coco_store[i] for i in sorted(coco_store)]
+        if ml_rows is not None:
+            ml_rows.extend((f"{split}/images/{ml_store[i][0]}", split, ml_store[i][1])
+                           for i in sorted(ml_store))
         if cfg.provenance:                          # write in deterministic idx order
             lines = []
             for i in sorted(prov_store):
@@ -247,7 +269,11 @@ def run(cfg: Config) -> None:
     if cfg.fmt in ("coco", "both"):
         for split in splits:
             write_coco(cfg.out / f"annotations_{split}.json",
-                       coco_records[split], class_names)
+                       coco_records[split], class_names,
+                       extra_annotations=cfg.extra_annotations)
+    if ml_rows is not None:
+        write_multilabel_csv(cfg.out / "multilabel.csv", ml_rows, class_names)
+        print(f"  wrote multilabel.csv ({len(ml_rows)} rows, {len(class_names)} classes)")
 
     if assets_path:
         try:
