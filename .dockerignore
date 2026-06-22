@@ -1,0 +1,21 @@
+# Keep the Docker build context small: the build only needs multiseedgen/ + seedgen.py.
+# Large data and model files reach containers via runtime volume mounts, never the
+# build context (mirrors .gitignore).
+.git
+.claude
+models/
+datasets/
+seeds/
+out/
+docker/_out
+docker/_models
+_uitest/
+__pycache__/
+*.py[cod]
+*.pth
+*.onnx
+*.zip
+.venv/
+venv/
+env/
+*.egg-info/

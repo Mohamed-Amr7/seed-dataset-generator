@@ -1,0 +1,53 @@
+# MultiSeedGen - OPT-IN SAM image (Segment Anything via torch).
+#
+# This is a SEPARATE, heavier image for the optional `--segment sam` backend. The
+# default image (docker/Dockerfile.gpu) stays light and torch-free; nobody who
+# doesn't want SAM pulls torch. We base on python:3.12-slim because PyTorch has no
+# Python 3.14 wheels (the GPU image's base). torch is installed CPU-only by default
+# to stay lean and to work WITHOUT the NVIDIA Container Toolkit; pass a CUDA wheel
+# index via --build-arg TORCH_INDEX=... once the toolkit is set up (see GPU_SETUP.md).
+#
+# Build:  docker build -f docker/Dockerfile.sam -t multiseedgen:sam .
+#   (or:  docker compose -f docker/compose.gpu.yaml --profile sam build multiseedgen-sam)
+# The SAM checkpoint is NOT baked in - mount it at runtime (see compose.gpu.yaml).
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    U2NET_HOME=/models/u2net
+
+# torch wheel index: CPU by default; override for CUDA, e.g.
+#   --build-arg TORCH_INDEX=https://download.pytorch.org/whl/cu124
+ARG TORCH_INDEX=https://download.pytorch.org/whl/cpu
+
+# OpenCV runtime libs (same as the base image)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Base runtime deps (CPU onnxruntime - the SAM path uses torch, not ORT, so we keep
+# the lighter CPU build here; rembg still works on CPU). torch/torchvision come from
+# the (CPU by default) wheel index on their OWN pip line so that index applies only
+# to them. segment-anything is the SAM library (imports as `segment_anything`).
+RUN pip install \
+        numpy opencv-python-headless scipy joblib pyyaml tqdm \
+        rembg onnxruntime \
+        fastapi "uvicorn[standard]" websockets \
+    && pip install --index-url ${TORCH_INDEX} torch torchvision \
+    && pip install segment-anything
+
+# App code (includes multiseedgen/sam_segment.py)
+COPY multiseedgen/ /app/multiseedgen/
+COPY seedgen.py /app/seedgen.py
+
+# Sanity: the SAM stack imports at build time (does not need the checkpoint or a GPU).
+RUN python -c "import torch, segment_anything; print('torch', torch.__version__)"
+
+EXPOSE 8000
+# Default: serve the Web UI. Override for CLI batch runs, e.g.
+#   docker compose -f docker/compose.gpu.yaml --profile sam run --rm multiseedgen-sam \
+#       python -m multiseedgen --sources /data/seeds --out /data/out --num-images 2000 \
+#       --segment sam --sam-checkpoint models/sam_vit_b_01ec64.pth --sam-model-type vit_b
+CMD ["python", "-m", "multiseedgen.web", "--host", "0.0.0.0", "--port", "8000"]
