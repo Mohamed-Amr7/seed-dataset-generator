@@ -24,3 +24,7 @@ _uitest/
 
 # Archives
 *.zip
+
+# Model checkpoints (large; downloaded on demand, e.g. SAM)
+models/
+*.pth
