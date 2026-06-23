@@ -144,7 +144,13 @@ export function FieldRow({
                 kind: field.path_kind === 'file' ? 'file' : 'dir',
                 fieldName: field.name,
                 initialPath: typeof value === 'string' && value ? value : null,
-                onSelect: (p) => push(p),
+                // The picker sets the value externally (it never goes through the Input's
+                // onChange), so sync the local text mirror too — otherwise push() updates
+                // lastPushed.current and the re-sync effect skips it, leaving a stale input.
+                onSelect: (p) => {
+                  setText(toDisplay(p))
+                  push(p)
+                },
               })
             }
           >
