@@ -2,8 +2,8 @@
 #
 # This is a SEPARATE, heavier image for the optional `--segment sam` backend. The
 # default image (docker/Dockerfile.gpu) stays light and torch-free; nobody who
-# doesn't want SAM pulls torch. We base on python:3.12-slim because PyTorch has no
-# Python 3.14 wheels (the GPU image's base). torch is installed CPU-only by default
+# doesn't want SAM pulls torch. All images share python:3.12-slim: PyTorch has no
+# Python 3.14 wheels, and 3.12 covers the whole stack. torch is installed CPU-only by default
 # to stay lean and to work WITHOUT the NVIDIA Container Toolkit; pass a CUDA wheel
 # index via --build-arg TORCH_INDEX=... once the toolkit is set up (see GPU_SETUP.md).
 #
@@ -31,20 +31,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Base runtime deps (CPU onnxruntime - the SAM path uses torch, not ORT, so we keep
-# the lighter CPU build here; rembg still works on CPU). torch/torchvision come from
-# the (CPU by default) wheel index on their OWN pip line so that index applies only
-# to them. segment-anything is the SAM library (imports as `segment_anything`).
-RUN pip install \
-        numpy opencv-python-headless scipy joblib pyyaml tqdm \
-        rembg onnxruntime \
-        fastapi "uvicorn[standard]" websockets \
-    && pip install --index-url ${TORCH_INDEX} torch torchvision \
-    && pip install segment-anything
-
-# App code (includes multiseedgen/sam_segment.py)
+# Build metadata + source (README is required: pyproject readme = "README.md").
+COPY pyproject.toml README.md ./
 COPY multiseedgen/ /app/multiseedgen/
 COPY seedgen.py /app/seedgen.py
+
+# DRY: core + web + CPU onnxruntime rembg from the pyproject extras (the SAM path
+# uses torch, not ORT, so the lighter CPU build is fine; rembg still works on CPU).
+# torch/torchvision come from the (CPU by default) wheel index on their OWN pip line
+# so that index applies only to them; the `sam` extra is intentionally NOT used here
+# because it would pull torch from PyPI's default index instead of $TORCH_INDEX.
+# segment-anything is the SAM library (imports as `segment_anything`).
+RUN pip install ".[web,rembg]" \
+    && pip install --index-url ${TORCH_INDEX} torch torchvision \
+    && pip install segment-anything
 
 # Sanity: the SAM stack imports at build time (does not need the checkpoint or a GPU).
 RUN python -c "import torch, segment_anything; print('torch', torch.__version__)"

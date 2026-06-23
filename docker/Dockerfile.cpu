@@ -1,0 +1,40 @@
+# MultiSeedGen - lean CPU image (no GPU, no NVIDIA toolkit, no Node).
+#
+# Runs ANYWHERE Docker runs. Installs the package from pyproject extras so the
+# dependency list stays DRY (single source of truth) and the committed SPA under
+# multiseedgen/web/static/ ships automatically via [tool.setuptools.package-data].
+# CPU only: no torch, no onnxruntime-gpu, no nvidia-* wheels.
+#
+# Build:  docker build -f docker/Dockerfile.cpu -t multiseedgen:cpu .
+# Run  :  docker compose -f docker/compose.yaml up --build   # Web UI on :8000
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    # rembg/U2Net model cache (mount a volume here to avoid re-downloading)
+    U2NET_HOME=/models/u2net
+
+# OpenCV runtime libs (headless still needs libGL/glib for some cv2 ops)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Build metadata + source. README is required (pyproject readme = "README.md").
+# .dockerignore keeps the context lean (no frontend/, datasets/, venv, caches).
+COPY pyproject.toml README.md ./
+COPY multiseedgen/ ./multiseedgen/
+COPY seedgen.py ./seedgen.py
+
+# DRY: install core + web UI + CPU rembg from the pyproject extras.
+RUN pip install ".[web,rembg]"
+
+# Sanity: CPU-only ORT provider present; no CUDA EP expected here.
+RUN python -c "import onnxruntime as ort; print('ORT providers:', ort.get_available_providers())"
+
+EXPOSE 8000
+# Default: serve the Web UI. Override for CLI batch runs, e.g.
+#   docker compose -f docker/compose.yaml run --rm multiseedgen \
+#       python -m multiseedgen --sources /data/seeds --out /data/out --num-images 2000
+CMD ["python", "-m", "multiseedgen.web", "--host", "0.0.0.0", "--port", "8000"]

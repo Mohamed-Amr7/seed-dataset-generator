@@ -8,21 +8,39 @@ web UI, and produces **byte-reproducible** output for a fixed `(config, seed)`.
 
 ## Quick start
 
-```bash
-pip install -e .                                  # core CLI; add ".[web]" for the UI
+The easiest path is the `Makefile` (it manages a local `.venv` for you — no GPU, no
+Node, no manual `activate` needed). Run `make help` to see every target.
 
+```bash
+make run                                          # install web + CPU rembg, launch the UI on :8000
+make generate CONFIG=configs/soybean_healthy.yaml # or generate a dataset headless
+make dev                                          # backend + Vite hot-reload (needs Node)
+```
+
+Prefer raw commands, or want the leanest install? That still works:
+
+```bash
+pip install -e .                                  # core CLI; add ".[web,rembg]" for the UI
 seedgen --config configs/soybean_healthy.yaml     # generate from a recipe
 multiseedgen-web                                  # or launch the web UI
 ```
 
+Run anywhere with Docker (CPU, no GPU/toolkit required):
+
+```bash
+make docker-up                                    # docker compose -f docker/compose.yaml up --build
+```
+
 Outputs (images, annotations, `data.yaml`, provenance, QA charts) are written to the
 config's `out:` directory. `python seedgen.py …` still works as a backward-compat shim.
+See **[deployment](docs/deployment.md)** for every install/run path (GPU is optional).
 
 ## Documentation
 
 Full docs live in **[`docs/`](docs/README.md)**:
 
 - **[Installation](docs/installation.md)** — install + optional extras (`web`/`rembg`/`gpu`/`sam`/`dev`).
+- **[Deployment](docs/deployment.md)** — `make` targets, the lean CPU Docker image, GPU/SAM paths.
 - **[Usage](docs/usage.md)** — CLI, web UI, config files, helper scripts.
 - **[Architecture](docs/architecture.md)** — package layout, the determinism contract, fork-safety, error/logging model.
 - **[Configuration tuning](docs/RECOMMENDED_SETTINGS.md)** & **[Augmentation/segmentation guide](docs/AUGMENTATION.md)**.

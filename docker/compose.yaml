@@ -1,0 +1,25 @@
+# MultiSeedGen - default CPU compose. Works on ANY machine: no NVIDIA driver,
+# no Container Toolkit, no GPU reservation. This is the "clone and run" path.
+#
+#   docker compose -f docker/compose.yaml up --build          # Web UI on :8000
+#   docker compose -f docker/compose.yaml run --rm multiseedgen \
+#       python -m multiseedgen --sources /data/seeds --out /data/out --num-images 2000
+#
+# For GPU rembg use docker/compose.gpu.yaml; for SAM see its `sam` / `sam-gpu`
+# profiles. Run only one stack at a time — they all publish host port 8000.
+services:
+  multiseedgen:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.cpu
+    image: multiseedgen:cpu
+    container_name: multiseedgen-cpu
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../seeds:/data/seeds:ro       # source single-seed images (read-only)
+      - ./_out:/data/out              # generated datasets (persisted on the host)
+      - ./_models:/models             # rembg/U2Net cache (U2NET_HOME=/models/u2net)
+    environment:
+      - MULTISEEDGEN_DATA_ROOT=/data  # web UI browses datasets under here
+    restart: unless-stopped

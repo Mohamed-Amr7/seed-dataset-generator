@@ -4,6 +4,11 @@ MultiSeedGen is a regular Python package (`pyproject.toml`, setuptools). It need
 **Python ≥ 3.10**. Only `numpy` and `opencv-python-headless` are hard imports of the
 core pipeline; everything else is an optional extra.
 
+> In a hurry? The `Makefile` wraps all of this: `make install` (lean core), `make run`
+> (web + CPU rembg), `make install-dev`, `make install-gpu`, … See
+> [deployment.md](deployment.md) for the full set of run paths (local + Docker, GPU
+> optional). This page documents the underlying `pip` commands.
+
 ## Core install (CLI + classical segmentation)
 
 ```bash

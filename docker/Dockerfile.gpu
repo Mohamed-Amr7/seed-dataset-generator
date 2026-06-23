@@ -7,7 +7,12 @@
 #
 # Build:  docker build -f docker/Dockerfile.gpu -t multiseedgen:gpu .
 # Run  :  see docker/compose.gpu.yaml  (requires --gpus / the toolkit)
-FROM python:3.14-slim
+#
+# Base: python:3.12-slim, shared with Dockerfile.cpu/.sam so all images pull a single
+# base layer. 3.12 has wheels for the whole GPU stack (onnxruntime-gpu 1.26.0 ships a
+# cp312 wheel; the nvidia-*-cu12 wheels are python-agnostic) and matches the SAM image's
+# torch ceiling, so there's no reason for the GPU image to diverge.
+FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -21,22 +26,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Python deps. onnxruntime-gpu + CUDA-12 pip wheels mirror the host install.
-# NOTE: onnxruntime-gpu 1.27 links CUDA 13 (libcudart.so.13), and real CUDA-13
-# pip runtime wheels do not exist yet (only 0.0.1 stubs). 1.26.0 links CUDA 12,
-# which DOES have real cu12 wheels - verified on the host (~4x faster than CPU,
-# IoU 1.0 vs CPU masks). Pin 1.26.0 + cu12 until cu13 runtime wheels ship.
-RUN pip install \
-        numpy opencv-python-headless scipy joblib pyyaml tqdm \
-        "rembg[gpu]" \
-        "onnxruntime-gpu==1.26.0" \
-        nvidia-cudnn-cu12 nvidia-cublas-cu12 nvidia-cufft-cu12 \
-        nvidia-curand-cu12 nvidia-cuda-runtime-cu12 nvidia-cuda-nvrtc-cu12 \
-        fastapi "uvicorn[standard]" websockets
-
-# App code
+# Build metadata + source (README is required: pyproject readme = "README.md").
+COPY pyproject.toml README.md ./
 COPY multiseedgen/ /app/multiseedgen/
 COPY seedgen.py /app/seedgen.py
+
+# DRY: install from the pyproject `gpu` + `web` extras (single source of truth).
+# The `gpu` extra pins onnxruntime-gpu + the CUDA-12 pip wheels exactly like the
+# verified host setup. NOTE: onnxruntime-gpu 1.27 links CUDA 13 (libcudart.so.13),
+# and real CUDA-13 pip runtime wheels do not exist yet (only 0.0.1 stubs); 1.26.0
+# links CUDA 12, which DOES have real cu12 wheels - ~4x faster than CPU, IoU 1.0 vs
+# CPU masks. Pin lives in pyproject.toml ([gpu] extra) until cu13 wheels ship.
+RUN pip install ".[gpu,web]"
 
 # Sanity: confirm the CUDA EP is visible at build time (does not need the GPU).
 RUN python -c "import onnxruntime as ort; print('ORT providers:', ort.get_available_providers())"

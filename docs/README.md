@@ -8,6 +8,7 @@ start. This folder holds the full documentation set.
 | Doc | What it covers |
 |-----|----------------|
 | [installation.md](installation.md) | Install, the optional extras (`web`/`rembg`/`gpu`/`sam`/`dev`), and how to verify. |
+| [deployment.md](deployment.md) | `make` targets, the lean CPU Docker image/compose, and the GPU/SAM run paths. |
 | [usage.md](usage.md) | Running the CLI and the web UI, config files, and the helper scripts. |
 | [configuration tuning](RECOMMENDED_SETTINGS.md) | Recommended settings and per-dataset tuning guidance. |
 | [augmentation & segmentation](AUGMENTATION.md) | Mapping data-quality problems to options; segmentation backends; the optional SAM integration. |
