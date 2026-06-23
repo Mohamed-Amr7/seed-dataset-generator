@@ -65,7 +65,29 @@ jobs:
         run: npm run typecheck
       - name: Unit tests
         run: npm run test
-      # Rebuilds the committed multiseedgen/web/static/ assets to prove source <-> artifact
-      # stay in sync (a stale committed build would change tracked files here).
+      # Rebuild the committed multiseedgen/web/static/ bundle from frontend/src. The next
+      # step asserts the freshly built output matches what's checked in.
       - name: Build
         run: npm run build
+      # Guard against committed-bundle drift. The packaged FastAPI app serves the committed
+      # multiseedgen/web/static/ bundle, NOT frontend/src, so a source-only fix passes dev
+      # and unit tests while the shipped app keeps serving stale JS (this has happened). The
+      # bundle's filenames are content-hashed, so we diff the fresh build above against the
+      # committed tree rather than pinning any hash. node-version + `npm ci` above keep the
+      # build deterministic; reproduce locally by building with the Node in frontend/.nvmrc.
+      - name: Verify committed bundle matches a fresh build
+        run: |
+          # Stage the output dir so brand-new hashed assets (untracked) are compared too,
+          # not just modified/deleted tracked files. The CI checkout is throwaway, so
+          # staging here is safe and lets one --cached diff report every kind of drift.
+          git add -A -- ../multiseedgen/web/static
+          if git diff --cached --quiet -- ../multiseedgen/web/static; then
+            echo "Committed bundle is in sync with frontend/src. ✓"
+          else
+            echo "::error::Committed Vite bundle is stale: multiseedgen/web/static/ does not match a fresh build of frontend/src. Run 'cd frontend && npm run build' and commit the result."
+            echo "----- drifted files -----"
+            git --no-pager diff --cached --name-status -- ../multiseedgen/web/static
+            echo "----- summary -----"
+            git --no-pager diff --cached --stat -- ../multiseedgen/web/static
+            exit 1
+          fi
