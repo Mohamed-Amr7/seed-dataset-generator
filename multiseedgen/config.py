@@ -108,7 +108,7 @@ class Config(BaseModel):
     sam_pred_iou_thresh: float = 0.88  # sam(automatic): predicted-IoU filter
     sam_stability_score_thresh: float = 0.95  # sam(automatic): stability filter
     jobs: int = -1  # segmentation workers; -1 = all cores
-    gpu_seg_jobs: int = 4  # max concurrent GPU rembg sessions (VRAM cap)
+    gpu_seg_jobs: int = 0  # 0 = auto (scale to free VRAM); >0 = explicit session cap
 
     # parallel scene generation
     workers: int = 0  # 0 = auto (min(cpu, 8)); 1 = serial reference

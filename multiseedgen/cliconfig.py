@@ -378,9 +378,10 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument(
         "--gpu-seg-jobs",
         type=int,
-        default=4,
-        help="max concurrent GPU rembg sessions when --rembg-provider "
-        "resolves to CUDA (bounds VRAM; default 4 ~= 3.7GB on a 6GB card)",
+        default=0,
+        help="max concurrent GPU rembg sessions when --rembg-provider resolves to "
+        "CUDA (bounds VRAM); 0 = auto (scale to free VRAM, ~0.9GB/session, "
+        "fallback 4), set a positive value to cap manually",
     )
     g.add_argument("--max-sources", type=int, default=0, help="0 = use all")
     g.add_argument(

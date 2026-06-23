@@ -14,7 +14,8 @@ config:
   neg_frac: 0.12
   segment: rembg              # cleanly drops cast shadow + avoids watermark text
   rembg_provider: auto
-  gpu_seg_jobs: 4             # lower to 2 if the cold first pass hits a VRAM OOM
+  # gpu_seg_jobs omitted -> auto-scales sessions to free VRAM; a per-image OOM->CPU
+  # fallback also prevents a hard crash. Set a number (e.g. 2) only to cap manually.
   fmt: yolo-seg               # schema-identical to seeds/Test/annotations/Healthy/*.txt
   degrade: true
   noise_sigma: 3

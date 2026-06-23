@@ -36,7 +36,7 @@ Or do all of it in the browser: `python -m multiseedgen.web` → http://localhos
 | Setting | Recommend | Why |
 |---|---|---|
 | `--rembg-provider auto` | **default** | Uses the RTX 3060 when present (~11× faster cut-outs), CPU otherwise. |
-| `--gpu-seg-jobs 4` | **default** (≤6) | Bounds VRAM on the 6 GB card (4 ≈ 3.7 GB, 6 ≈ 5.5 GB). Raise only if VRAM is free. |
+| `--gpu-seg-jobs 0` | **default** (auto) | `0` = auto-scales concurrent GPU rembg sessions to free VRAM (~0.9 GB each; falls back to 4 if `nvidia-smi` is absent). A per-image OOM→CPU fallback also prevents a hard crash. Set a positive number only to cap manually. |
 | `--workers 0` | **default** (auto) | Parallel scene generation. Use `--workers 1` only when you want the deterministic reference. |
 | `--seed 7` | **set it** | Reproducible runs; output is byte-identical for a given seed regardless of `--workers`. |
 | `--bg-from-sources` | **on** | Composites onto your **real tray** (inpainted from sources) → closes the domain gap. Best single quality lever. |
@@ -122,7 +122,7 @@ python seedgen.py \
   --num-images 3000 --img-size 640 \
   --min-seeds 6 --max-seeds 22 --scale-min 0.06 --scale-max 0.18 \
   --bg-from-sources --neg-frac 0.12 \
-  --segment rembg --rembg-provider auto --gpu-seg-jobs 4 \
+  --segment rembg --rembg-provider auto \
   --format yolo-seg \
   --degrade --noise-sigma 3 --jpeg-quality-min 75 --jpeg-quality-max 95 --blur-max-sigma 0.6 \
   --shadow-dir-mode scene --qa-report --visualize-count 12 --seed 7
@@ -142,7 +142,7 @@ python seedgen.py \
   --num-images 2500 --img-size 640 \
   --min-seeds 6 --max-seeds 22 --scale-min 0.06 --scale-max 0.18 \
   --bg-from-sources --neg-frac 0.12 \
-  --segment rembg --rembg-provider auto --gpu-seg-jobs 4 \
+  --segment rembg --rembg-provider auto \
   --format yolo-seg \
   --degrade --noise-sigma 3 --jpeg-quality-min 75 --jpeg-quality-max 95 --blur-max-sigma 0.6 \
   --shadow-dir-mode scene --qa-report --visualize-count 12 --seed 7
@@ -152,9 +152,11 @@ python seedgen.py \
   single class (`--class-mode single`). Synthetic labels carry class id `0`; the real
   `Test/annotations/Healthy/*.txt` use id `4` inside the 5-class condition scheme — fine for
   seed-vs-background detection, just not id-compatible with the real multi-condition labels.
-- Cold first pass on a fresh `out` runs every source through rembg live; if the GPU hits a
-  `bfc_arena` VRAM OOM, drop to `--gpu-seg-jobs 2` (or `--rembg-provider cpu`). With only 133
-  sources either is quick. Shipped as `configs/soybean_healthy.yaml`.
+- Cold first pass on a fresh `out` runs every source through rembg live. Session count now
+  **auto-scales to free VRAM** and a `bfc_arena` VRAM OOM mid-run **falls back to CPU for that
+  worker** instead of crashing, so the old `--gpu-seg-jobs 2` workaround is rarely needed; set
+  a positive `--gpu-seg-jobs` only to cap manually (or `--rembg-provider cpu` to force CPU).
+  With only 133 sources either is quick. Shipped as `configs/soybean_healthy.yaml`.
 - **Use `rembg`, not `auto`, for this domain.** The warm cast shadow is far in colour from the
   cream tray, so the classical `auto` cascade grabs it (and sometimes the burned-in watermark)
   into the cut-out — and because a shadow+seed blob scores *high* confidence, the rembg fallback
@@ -209,7 +211,7 @@ config:
   neg_frac: 0.12
   segment: rembg
   rembg_provider: auto
-  gpu_seg_jobs: 4
+  # gpu_seg_jobs omitted -> auto-scales to free VRAM (set a number to cap manually)
   fmt: yolo-seg
   degrade: true
   noise_sigma: 3
@@ -237,7 +239,7 @@ config:
   neg_frac: 0.12
   segment: rembg
   rembg_provider: auto
-  gpu_seg_jobs: 4          # drop to 2 if the cold first pass hits a VRAM OOM
+  # gpu_seg_jobs omitted -> auto-scales to free VRAM; OOM falls back to CPU (set to cap)
   fmt: yolo-seg
   degrade: true
   noise_sigma: 3
@@ -304,6 +306,11 @@ First match wins; it's folded into the cache key so changing it re-segments only
 - GPU cut-outs aren't bit-identical run-to-run on a **cold** cache (cuDNN nondeterminism; CPU vs
   GPU masks differ ~0.01%). Within a run they're cached, so determinism is exact. Use
   `--rembg-provider cpu` if you need strict cross-run reproducibility.
+- **OOM→CPU fallback caveat:** if a GPU rembg worker hits a mid-run CUDA OOM it retries that
+  image (and the rest of that worker) on CPU rather than crashing. The seg-cache key encodes the
+  *resolved* device (`cuda`), so such a CPU-computed mask is cached under the `cuda` key. This is
+  a rare degraded path; for a strictly reproducible publishable run use `--rembg-provider cpu`
+  (which also sidesteps the cold-cache nondeterminism above).
 - Synthetic backgrounds (`solid/gradient/noise`) are a fallback; **prefer `--bg-from-sources`**
   (or `--textures <real photos>`). Avoid `--backgrounds seedbed` (unlabelled seed clutter).
 ```

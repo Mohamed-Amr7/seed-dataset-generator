@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import csv
 import fnmatch
+import gc
 import hashlib
 import json
 import logging
@@ -26,7 +27,13 @@ from .cache import (
     _seg_cache_key,
 )
 from .segment import extract_background, segment_seed
-from .session import _effective_rembg_provider, _resolve_rembg_device, _set_rembg_provider
+from .session import (
+    _auto_gpu_seg_jobs,
+    _effective_rembg_provider,
+    _free_vram_gb,
+    _resolve_rembg_device,
+    _set_rembg_provider,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -222,13 +229,27 @@ def load_seeds(cfg: Config):
     # is capped like GPU rembg regardless of the onnxruntime provider.
     heavy_sam = cfg.segment == "sam" and cfg.sam_checkpoint is not None
     if gpu_rembg or heavy_sam:
-        cap = max(1, int(cfg.gpu_seg_jobs))
+        # gpu_seg_jobs == 0 is the auto sentinel: scale the session count to free VRAM
+        # (falls back to 4 when nvidia-smi isn't available). A positive value is an
+        # explicit manual cap. Job count only changes scheduling, never output bytes.
+        if cfg.gpu_seg_jobs > 0:
+            cap = int(cfg.gpu_seg_jobs)
+            how = "--gpu-seg-jobs"
+        else:
+            cap = _auto_gpu_seg_jobs()
+            free = _free_vram_gb()
+            how = (
+                f"auto from ~{free:.1f} GB free VRAM"
+                if free is not None
+                else "auto (VRAM probe unavailable; default 4)"
+            )
+        cap = max(1, cap)
         if jobs <= 0 or jobs > cap:
             jobs = cap
         what = "SAM" if heavy_sam else "GPU rembg"
         logger.info(
             f"  [{'sam' if heavy_sam else 'gpu'}] segmentation capped to {jobs} "
-            f"worker(s) to fit memory (--gpu-seg-jobs); {what} stays faster per image"
+            f"worker(s) to fit memory ({how}); {what} stays faster per image"
         )
 
     if _HAVE_JOBLIB and jobs != 1 and len(tasks) > 1:
@@ -302,6 +323,7 @@ def load_seeds(cfg: Config):
     for r in results:
         r.patch = None
         r.background = None
+    gc.collect()  # reclaim the dropped/sub-sampled patch buffers before the render phase
     return seeds, class_names, source_bgs, results
 
 

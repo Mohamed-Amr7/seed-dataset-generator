@@ -12,7 +12,7 @@ config:
   neg_frac: 0.12
   segment: rembg
   rembg_provider: auto
-  gpu_seg_jobs: 4
+  # gpu_seg_jobs omitted -> auto-scales sessions to free VRAM (set a number to cap)
   fmt: yolo-seg
   degrade: true
   noise_sigma: 3

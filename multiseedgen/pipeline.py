@@ -70,7 +70,8 @@ def _stage_assets_mmap(stage_dir: Path, manifest_path: Path, seeds: list, textur
     copy via the OS page cache) instead of unpickling its own full duplicate. The
     seed order in the manifest mirrors the parent's `seeds` list exactly, so the
     pools reconstructed in each worker are byte- and order-identical -> deterministic."""
-    shutil.rmtree(stage_dir, ignore_errors=True)  # clear any stale staging
+    shutil.rmtree(stage_dir, ignore_errors=True)  # clear any stale staging dir
+    manifest_path.unlink(missing_ok=True)  # ...and any stale manifest from a hard kill
     stage_dir.mkdir(parents=True, exist_ok=True)
     seed_entries = []
     for i, s in enumerate(seeds):
@@ -123,6 +124,22 @@ def _load_assets(assets_path: str) -> tuple:
     cached = (pools, textures)
     _ASSET_CACHE[assets_path] = cached
     return cached
+
+
+def _cleanup_staging(assets_path: str | None, stage_dir: Path | None) -> None:
+    """Remove the loky staging manifest + .npy dir and drop the memo. Called from a
+    finally so a crash / Ctrl-C / exception mid-generation can't orphan the multi-GB
+    staging dir; must never raise (it runs while an exception may be propagating)."""
+    if not assets_path:
+        return
+    try:
+        os.remove(assets_path)
+    except OSError:
+        pass
+    if stage_dir is not None:
+        shutil.rmtree(stage_dir, ignore_errors=True)  # drop the staged .npy files
+    _ASSET_CACHE.pop(assets_path, None)
+    gc.collect()
 
 
 def _available_ram_bytes() -> int | None:
@@ -358,94 +375,96 @@ def run(cfg: Config) -> None:
     if backend == "loky":
         stage_dir = cfg.out / ".assets_mmap"
         assets_path = str(cfg.out / ".assets_manifest.json")
-        _stage_assets_mmap(stage_dir, Path(assets_path), seeds, textures)
-        pools = None
-        seeds = None
-        textures = None
-        gc.collect()
 
-    parallel = _HAVE_JOBLIB and workers > 1
-    desc = f"{workers} {backend} worker(s)" if parallel else "serial"
-    logger.info(f"[2/3] generating {cfg.num_images} scenes ({n_train} train / {n_val} val), {desc}")
-    coco_records = {"train": [], "val": []}
-    qa = _QAStats() if cfg.qa_report else None
-    ml_rows: list = [] if cfg.multilabel_csv else None  # per-image multi-label rows
-    total_boxes = 0
-    total_neg = 0
-    for split, count in splits.items():
-        if count <= 0:
-            continue
-        seed_seqs = _scene_seeds(cfg.seed, split, count)
-        coco_store: dict = {}
-        prov_store: dict = {}
-        ml_store: dict = {}
-        if parallel and count > 1:
-            # batch several scenes per dispatch to amortize dispatch overhead
-            batch = max(1, min(64, count // (workers * 4) or 1))
-            if backend == "loky":
-                tasks = (
-                    delayed(_render_one_disk)(cfg, assets_path, split, i, seed_seqs[i])
-                    for i in range(count)
-                )
+    # Everything that touches the on-disk staging runs inside try/finally so a crash,
+    # Ctrl-C, or exception mid-generation can't orphan the multi-GB .assets_mmap dir
+    # (the start-of-run rmtree only self-heals a *later* loky run, not the current one).
+    try:
+        if backend == "loky":
+            _stage_assets_mmap(stage_dir, Path(assets_path), seeds, textures)
+            pools = None
+            seeds = None
+            textures = None
+            gc.collect()
+
+        parallel = _HAVE_JOBLIB and workers > 1
+        desc = f"{workers} {backend} worker(s)" if parallel else "serial"
+        logger.info(
+            f"[2/3] generating {cfg.num_images} scenes ({n_train} train / {n_val} val), {desc}"
+        )
+        coco_records = {"train": [], "val": []}
+        qa = _QAStats() if cfg.qa_report else None
+        ml_rows: list = [] if cfg.multilabel_csv else None  # per-image multi-label rows
+        total_boxes = 0
+        total_neg = 0
+        for split, count in splits.items():
+            if count <= 0:
+                continue
+            seed_seqs = _scene_seeds(cfg.seed, split, count)
+            coco_store: dict = {}
+            prov_store: dict = {}
+            ml_store: dict = {}
+            if parallel and count > 1:
+                # batch several scenes per dispatch to amortize dispatch overhead
+                batch = max(1, min(64, count // (workers * 4) or 1))
+                if backend == "loky":
+                    tasks = (
+                        delayed(_render_one_disk)(cfg, assets_path, split, i, seed_seqs[i])
+                        for i in range(count)
+                    )
+                else:
+                    cv2.setNumThreads(1)  # 1 cv2 thread/scene; joblib threads parallelize
+                    tasks = (
+                        delayed(_render_one)(cfg, pools[split], textures, split, i, seed_seqs[i])
+                        for i in range(count)
+                    )
+                gen = Parallel(
+                    n_jobs=workers, backend=backend, return_as="generator", batch_size=batch
+                )(tasks)
             else:
-                cv2.setNumThreads(1)  # 1 cv2 thread/scene; joblib threads parallelize
-                tasks = (
-                    delayed(_render_one)(cfg, pools[split], textures, split, i, seed_seqs[i])
+                # serial path (parallel disabled or count == 1). When loky staged the
+                # assets the parent dropped its in-RAM pools, so map them back from disk
+                # (memmap, ~0 RAM); otherwise use the parent's shared in-memory copy.
+                s_pools, s_textures = (
+                    _load_assets(assets_path) if backend == "loky" else (pools, textures)
+                )
+                gen = (
+                    _render_one(cfg, s_pools[split], s_textures, split, i, seed_seqs[i])
                     for i in range(count)
                 )
-            gen = Parallel(
-                n_jobs=workers, backend=backend, return_as="generator", batch_size=batch
-            )(tasks)
-        else:
-            # serial path (parallel disabled or count == 1). When loky staged the
-            # assets the parent dropped its in-RAM pools, so map them back from disk
-            # (memmap, ~0 RAM); otherwise use the parent's shared in-memory copy.
-            s_pools, s_textures = (
-                _load_assets(assets_path) if backend == "loky" else (pools, textures)
-            )
-            gen = (
-                _render_one(cfg, s_pools[split], s_textures, split, i, seed_seqs[i])
-                for i in range(count)
-            )
-        for result in _tqdm(gen, total=count, desc=split, unit="img"):
-            nb, neg = _write_result(cfg, split, result, coco_store)
-            total_boxes += nb
-            total_neg += neg
-            if qa is not None:
-                qa.add(split, result)
-            if cfg.provenance:
-                prov_store[result.idx] = (result.name, result.prov)
-            if ml_rows is not None:  # keyed by idx -> deterministic order
-                ml_store[result.idx] = (result.name, [int(lbl[0]) for lbl in result.labels])
-        if cfg.fmt in ("coco", "both"):
-            coco_records[split] = [coco_store[i] for i in sorted(coco_store)]
-        if ml_rows is not None:
-            ml_rows.extend(
-                (f"{split}/images/{ml_store[i][0]}", split, ml_store[i][1])
-                for i in sorted(ml_store)
-            )
-        if cfg.provenance:  # write in deterministic idx order
-            lines = []
-            for i in sorted(prov_store):
-                name, prov = prov_store[i]
-                lines.append(json.dumps({"image": f"{split}/images/{name}", "boxes": prov or []}))
-            (cfg.out / f"provenance_{split}.jsonl").write_text(
-                "\n".join(lines) + ("\n" if lines else "")
-            )
-        del coco_store, prov_store, ml_store  # per-split metadata; freed before next split
-        gc.collect()
+            for result in _tqdm(gen, total=count, desc=split, unit="img"):
+                nb, neg = _write_result(cfg, split, result, coco_store)
+                total_boxes += nb
+                total_neg += neg
+                if qa is not None:
+                    qa.add(split, result)
+                if cfg.provenance:
+                    prov_store[result.idx] = (result.name, result.prov)
+                if ml_rows is not None:  # keyed by idx -> deterministic order
+                    ml_store[result.idx] = (result.name, [int(lbl[0]) for lbl in result.labels])
+            if cfg.fmt in ("coco", "both"):
+                coco_records[split] = [coco_store[i] for i in sorted(coco_store)]
+            if ml_rows is not None:
+                ml_rows.extend(
+                    (f"{split}/images/{ml_store[i][0]}", split, ml_store[i][1])
+                    for i in sorted(ml_store)
+                )
+            if cfg.provenance:  # write in deterministic idx order
+                lines = []
+                for i in sorted(prov_store):
+                    name, prov = prov_store[i]
+                    lines.append(
+                        json.dumps({"image": f"{split}/images/{name}", "boxes": prov or []})
+                    )
+                (cfg.out / f"provenance_{split}.jsonl").write_text(
+                    "\n".join(lines) + ("\n" if lines else "")
+                )
+            del coco_store, prov_store, ml_store  # per-split metadata; freed before next split
+            gc.collect()
 
-    _write_annotations(cfg, want_labels, class_names, coco_records, ml_rows)
-
-    if assets_path:
-        try:
-            os.remove(assets_path)
-        except OSError:
-            pass
-        if stage_dir is not None:
-            shutil.rmtree(stage_dir, ignore_errors=True)  # drop the staged .npy files
-        _ASSET_CACHE.pop(assets_path, None)
-        gc.collect()
+        _write_annotations(cfg, want_labels, class_names, coco_records, ml_rows)
+    finally:
+        _cleanup_staging(assets_path, stage_dir)
 
     summary = _build_summary(
         cfg,

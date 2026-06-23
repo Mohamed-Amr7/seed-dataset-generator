@@ -670,9 +670,9 @@
         },
         {
           "choices": null,
-          "default": 4,
+          "default": 0,
           "flag": "--gpu-seg-jobs",
-          "help": "max concurrent GPU rembg sessions when --rembg-provider resolves to CUDA (bounds VRAM; default 4 ~= 3.7GB on a 6GB card)",
+          "help": "max concurrent GPU rembg sessions when --rembg-provider resolves to CUDA (bounds VRAM); 0 = auto (scale to free VRAM, ~0.9GB/session, fallback 4), set a positive value to cap manually",
           "name": "gpu_seg_jobs",
           "path_kind": null,
           "widget": "int"
@@ -960,7 +960,6 @@
       "class_mode": "single",
       "degrade": true,
       "fmt": "yolo-seg",
-      "gpu_seg_jobs": 4,
       "img_size": 640,
       "jpeg_quality_max": 95,
       "jpeg_quality_min": 75,
@@ -985,7 +984,6 @@
       "blur_max_sigma": 0.6,
       "degrade": true,
       "fmt": "yolo-seg",
-      "gpu_seg_jobs": 4,
       "img_size": 640,
       "jpeg_quality_max": 95,
       "jpeg_quality_min": 75,

@@ -22,7 +22,7 @@
   "flip": true,
   "fmt": "yolo-seg",
   "ghost_blend": 1.0,
-  "gpu_seg_jobs": 4,
+  "gpu_seg_jobs": 0,
   "grabcut_iters": 5,
   "grabcut_min_object_area": 0.0,
   "grabcut_rect_margin": 0.06,

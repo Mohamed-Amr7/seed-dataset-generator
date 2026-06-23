@@ -101,5 +101,6 @@ the NVIDIA Container Toolkit. See [`docker/GPU_SETUP.md`](../docker/GPU_SETUP.md
 - `points`: a single foreground click at the crop centre.
 
 SAM holds a full model per worker process, so segmentation is capped to `--gpu-seg-jobs`
-workers to bound memory. Cut-outs are content-hash cached, so a dataset stays reproducible
+workers to bound memory (default `0` = auto-scale the count to free VRAM; set a positive
+value to cap manually). Cut-outs are content-hash cached, so a dataset stays reproducible
 even though GPU inference itself is not bit-exact run-to-run.

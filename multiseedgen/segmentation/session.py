@@ -9,6 +9,9 @@ the worker boundary."""
 from __future__ import annotations
 
 import logging
+import os
+import shutil
+import subprocess
 
 import cv2
 import numpy as np
@@ -21,6 +24,65 @@ logger = logging.getLogger(__name__)
 _REMBG_SESSION = None
 _REMBG_PROVIDER = "auto"  # auto|cuda|cpu - set per process from cfg
 _ORT_PROVIDERS_CACHE = None  # memoized onnxruntime.get_available_providers()
+_AUTO_GPU_SEG_JOBS = None  # memoized VRAM-scaled session count (per process)
+
+
+def _free_vram_gb() -> float | None:
+    """Best-effort free VRAM (GiB) of the first CUDA device via ``nvidia-smi``; None if
+    it can't be probed. No new dependency: ``nvidia-smi`` ships with the CUDA driver
+    that onnxruntime-gpu already requires, so it's present wherever GPU rembg can run."""
+    exe = shutil.which("nvidia-smi")
+    if not exe:
+        return None
+    try:
+        out = subprocess.run(
+            [exe, "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=True,
+        ).stdout
+        first = out.strip().splitlines()[0].strip()
+        return int(first) / 1024.0  # MiB -> GiB
+    except (OSError, ValueError, IndexError, subprocess.SubprocessError):
+        return None
+
+
+def _auto_gpu_seg_jobs() -> int:
+    """Concurrent GPU rembg sessions scaled to free VRAM (used when ``gpu_seg_jobs`` is
+    the ``0`` = auto sentinel). Each CUDA rembg session needs ~0.9 GB; use ~70% of free
+    VRAM and never exceed the CPU count. Falls back to 4 (the documented 6 GB baseline)
+    when VRAM can't be probed, so behavior is unchanged where the probe is unavailable.
+    Memoized per process so every worker computes it at most once."""
+    global _AUTO_GPU_SEG_JOBS
+    if _AUTO_GPU_SEG_JOBS is not None:
+        return _AUTO_GPU_SEG_JOBS
+    free = _free_vram_gb()
+    if free is None:
+        _AUTO_GPU_SEG_JOBS = 4
+    else:
+        n = int(round(free * 0.7 / 0.9))
+        _AUTO_GPU_SEG_JOBS = max(1, min(n, os.cpu_count() or 1))
+    return _AUTO_GPU_SEG_JOBS
+
+
+def _is_cuda_oom(exc: Exception) -> bool:
+    """True for a CUDA out-of-memory / hard CUDA failure from onnxruntime (which raises
+    a generic RuntimeException/Fail, so we match on the message). Deliberately tight so
+    ordinary errors (bad image, shape mismatch) still propagate instead of silently
+    routing to CPU."""
+    msg = str(exc).lower()
+    return any(
+        s in msg
+        for s in (
+            "out of memory",
+            "bfc_arena",
+            "cudaerrormemoryalloc",  # cudaErrorMemoryAllocation
+            "cuda_error_out_of_memory",
+            "cuda failure",
+            "cuda error",
+        )
+    )
 
 
 def _set_rembg_provider(pref: str) -> None:
@@ -143,7 +205,25 @@ def _mask_rembg(bgr: np.ndarray) -> np.ndarray | None:
             actual = providers
         logger.info(f"  [rembg] execution providers: {actual}")
     rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-    out = remove(rgb, session=_REMBG_SESSION)  # RGBA
+    try:
+        out = remove(rgb, session=_REMBG_SESSION)  # RGBA
+    except Exception as exc:
+        # A mid-run CUDA OOM (e.g. too many concurrent sessions, or an oversized source)
+        # would otherwise crash the whole worker after long segmentation work. If we're
+        # on CUDA, drop THIS worker to CPU permanently and retry the image once; any
+        # non-OOM error still propagates. Caveat: the parent rewrites cfg.rembg_provider
+        # to a concrete 'cuda' before forking and the seg-cache key encodes that device,
+        # so a CPU-fallback mask is cached under the cuda key (acceptable on this rare
+        # crash-avoidance path; see RECOMMENDED_SETTINGS.md caveats).
+        if not (_is_cuda_oom(exc) and _effective_rembg_provider(_REMBG_PROVIDER) == "cuda"):
+            raise
+        logger.warning(
+            f"  [rembg][warn] CUDA failure during inference ({type(exc).__name__}); "
+            f"falling back to CPU for the rest of this worker"
+        )
+        _set_rembg_provider("cpu")  # resets _REMBG_SESSION -> None
+        _REMBG_SESSION = new_session(providers=_rembg_ort_providers("cpu"))
+        out = remove(rgb, session=_REMBG_SESSION)
     return out[..., 3]
 
 
