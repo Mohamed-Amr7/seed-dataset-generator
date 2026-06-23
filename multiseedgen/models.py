@@ -28,6 +28,7 @@ class Seed:
     source: str = ""  # source-file rel path (provenance / extra_annotations)
     method: str = ""  # segmentation method that produced this cut-out
     split: str = "both"  # "train" | "val" | "both" (seed-level hold-out)
+    confidence: float = 0.0  # 0..1 segmentation confidence (from r.report; tuner overlay)
 
 
 @dataclass

@@ -83,6 +83,7 @@ class Config(BaseModel):
     segment: Literal["auto", "alpha", "threshold", "otsu", "grabcut", "rembg", "sam"] = "auto"
     bg_tolerance: float = 28.0  # color distance for border-thresholding
     max_sources: int = 0  # 0 = use all
+    scan_limit: int = 0  # 0 = scan all sources; >0 = segment only a representative sample of N
     max_seed_px: int = 0  # OPT-IN: cap stored seed patch long side (0 = off, full res)
     seg_conf_thresh: float = 0.55  # below this, route a source to rembg / skip
     rembg_fallback: bool = True  # auto-route low-confidence sources to rembg

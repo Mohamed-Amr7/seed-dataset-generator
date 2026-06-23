@@ -69,6 +69,10 @@ def _write_yaml(tmp_path: Path, body: str, name: str = "c.yaml") -> Path:
 def test_shipped_config_snapshot(name):
     cfg = parse_args(["--config", str(_CONFIGS_DIR / f"{name}.yaml")])
     got = _as_jsonable(cfg)
+    # `config` is the absolute path to the --config file itself, which is machine-specific
+    # (e.g. /home/you/repo/... vs CI's /app/...). Pin the resolved SETTINGS, not where the
+    # repo happens to live, so the snapshot is portable across dev boxes and CI.
+    got.pop("config", None)
 
     snap = _GOLDEN_DIR / f"config_{name}.json"
     if os.environ.get("UPDATE_GOLDEN") or not snap.exists():

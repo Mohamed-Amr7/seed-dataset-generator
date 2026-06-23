@@ -7,13 +7,14 @@ montage paths run without a full pipeline invocation.
 
 from __future__ import annotations
 
+import json
 import types
 
 import cv2
 import numpy as np
 import pytest
 
-from multiseedgen.models import _QAStats
+from multiseedgen.models import SegResult, _QAStats
 from multiseedgen.qa import (
     _bar_chart,
     _checkerboard,
@@ -119,7 +120,42 @@ def test_make_previews_writes_one_annotated_image_per_input(tiny_dataset):
 
 
 def test_check_segmentation_writes_one_png_per_seed(make_cfg, seed_cutout, tmp_path):
-    check_segmentation([seed_cutout, seed_cutout], ["seed"], tmp_path, n=5)
+    # full-run mode (num_images > 0): kept-only output, original filenames, no manifest
+    cfg = make_cfg(out=tmp_path, num_images=2)
+    check_segmentation([seed_cutout, seed_cutout], ["seed"], cfg, n=5)
 
-    checks = list((tmp_path / "seed_check").glob("*.png"))
+    d = tmp_path / "seed_check"
+    checks = list(d.glob("seed_*.png"))
     assert len(checks) == 2  # min(n, len(seeds))
+    assert not (d / "manifest.json").exists()  # manifest is tuner-mode only
+
+
+def test_check_segmentation_tuner_mode_writes_manifest(make_cfg, seed_cutout, tmp_path):
+    """Tuner mode (num_images == 0) stamps kept cut-outs and writes a manifest with
+    confidence; a skipped SegResult is rendered from its on-disk original."""
+    cfg = make_cfg(out=tmp_path, sources=tmp_path / "src", num_images=0)
+    cfg.sources.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(cfg.sources / "bad.png"), np.full((30, 30, 3), 120, np.uint8))
+
+    kept = seed_cutout
+    kept.confidence = 0.91
+    skipped = SegResult(
+        patch=None,
+        report={
+            "skipped": True,
+            "skip_reason": "low_confidence",
+            "confidence": 0.2,
+            "method": "auto",
+            "source": "bad.png",
+        },
+        source="bad.png",
+        class_id=0,
+    )
+    check_segmentation([kept], ["seed"], cfg, n=5, seg_results=[skipped])
+
+    manifest = json.loads((tmp_path / "seed_check" / "manifest.json").read_text())
+    statuses = sorted(e["status"] for e in manifest)
+    assert statuses == ["kept", "skipped"]
+    kept_entry = next(e for e in manifest if e["status"] == "kept")
+    assert kept_entry["confidence"] == 0.91
+    assert (tmp_path / "seed_check" / kept_entry["file"]).exists()

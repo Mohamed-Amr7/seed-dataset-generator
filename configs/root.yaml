@@ -15,12 +15,23 @@ config:
   rembg_provider: auto
   fmt: both
   masks: true
+  # per-seed augmentation (label-safe; lighting + shape robustness)
+  aug_gamma: 0.2            # random tone-curve jitter on the composite
+  aug_shear: 4.0            # max per-seed shear (deg); box/polygon recomputed
+  # class-balanced sampling (counters the 27-species source-count imbalance)
+  class_balanced: true      # pick a class first, then a seed within it
+  # richer export (COCO is written here via fmt: both)
+  extra_annotations: true   # seed source/dims/scale/method on each COCO annotation
+  multilabel_csv: true      # per-image, per-class count CSV
   degrade: true
   noise_sigma: 3
   jpeg_quality_min: 80
   jpeg_quality_max: 95
   blur_max_sigma: 0.5
   shadow_dir_mode: scene
+  # leakage-safe split + provenance
+  val_seed_holdout: 0.2     # source seeds reserved for val only (never seen in train)
+  provenance: true          # provenance_<split>.jsonl maps boxes -> source seeds
   qa_report: true
   visualize_count: 12
   seed: 7

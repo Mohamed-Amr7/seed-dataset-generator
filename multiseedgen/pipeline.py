@@ -330,11 +330,13 @@ def run(cfg: Config) -> None:
     logger.info(f"[1/3] loading + segmenting sources from {cfg.sources}")
     seeds, class_names, source_bgs, seg_results = load_seeds(cfg)
     write_seg_report(cfg.out, seg_results, cfg)
+    # Render the cut-out check BEFORE freeing seg_results: in tuner mode it needs the
+    # skipped sources' provenance to re-read and render them (see check_segmentation).
+    if cfg.check_seeds > 0:
+        check_segmentation(seeds, class_names, cfg, cfg.check_seeds, seg_results)
     del seg_results  # the SegResult container is unused past the report
     gc.collect()  # reclaim freed patch/background buffers before render
 
-    if cfg.check_seeds > 0:
-        check_segmentation(seeds, class_names, cfg.out, cfg.check_seeds)
     if cfg.num_images <= 0:
         logger.info("num-images is 0: segmentation check only, no dataset generated.")
         return

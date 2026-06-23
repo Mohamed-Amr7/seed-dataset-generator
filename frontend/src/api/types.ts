@@ -80,12 +80,27 @@ export interface SegReportData {
   skipped?: SegSkipped[]
 }
 
-export interface SegCheckResponse {
-  returncode: number
-  report: SegReportData | null
-  images: string[]
-  log: string
+/** POST /api/seg/check now launches a tracked run (like /api/runs) and returns its id. */
+export interface SegCheckStart {
+  run_id: string
   out: string
+}
+
+/** One rendered cut-out from a segmentation check (kept = checkerboard, skipped = original). */
+export interface SegSeed {
+  url: string
+  source: string | null
+  status: 'kept' | 'skipped'
+  confidence: number | null
+  method: string | null
+  reason: string | null
+}
+
+/** GET /api/seg/result: report + per-seed manifest for a finished/stopped check. */
+export interface SegResultResponse {
+  report: SegReportData | null
+  out: string
+  seeds: SegSeed[]
 }
 
 export interface DatasetsList {

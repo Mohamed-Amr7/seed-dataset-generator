@@ -27,11 +27,28 @@ const REQUIRED = new Set(['sources', 'out'])
  * One schema-driven field. Text/number/array widgets keep a local string mirror so partial
  * input (e.g. "0." while typing a float) survives, while still re-syncing when the value is
  * changed externally (preset switch, load-from-file, Browse). bool -> Switch, choice -> Select.
+ *
+ * By default the field is bound to the shared config store. Pass `value` + `onChange` to drive
+ * it from external (e.g. component-local) state instead — used by the segmentation tuner, whose
+ * per-method knobs are intentionally kept out of the run config.
  */
-export function FieldRow({ field, error }: { field: SchemaField; error?: string }) {
-  const value = useConfigStore((s) => s.config[field.name])
+export function FieldRow({
+  field,
+  error,
+  value: controlledValue,
+  onChange,
+}: {
+  field: SchemaField
+  error?: string
+  value?: ConfigValue
+  onChange?: (value: ConfigValue) => void
+}) {
+  const storeValue = useConfigStore((s) => s.config[field.name])
   const setField = useConfigStore((s) => s.setField)
   const openPicker = usePickerStore((s) => s.openPicker)
+
+  const controlled = onChange !== undefined
+  const value = controlled ? (controlledValue ?? null) : storeValue
 
   const id = `field-${field.name}`
   const isArrayField = field.name === 'backgrounds'
@@ -50,7 +67,8 @@ export function FieldRow({ field, error }: { field: SchemaField; error?: string 
 
   const push = (next: ConfigValue) => {
     lastPushed.current = next
-    setField(field.name, next)
+    if (controlled) onChange(next)
+    else setField(field.name, next)
   }
 
   const onTextChange = (raw: string) => {

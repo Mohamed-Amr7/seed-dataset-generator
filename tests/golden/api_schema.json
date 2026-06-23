@@ -689,6 +689,15 @@
         {
           "choices": null,
           "default": 0,
+          "flag": "--scan-limit",
+          "help": "segment only a representative round-robin sample of N sources (0 = all); speeds up --check-seeds without skewing per-class coverage",
+          "name": "scan_limit",
+          "path_kind": null,
+          "widget": "int"
+        },
+        {
+          "choices": null,
+          "default": 0,
           "flag": "--max-seed-px",
           "help": "OPT-IN: cap each stored seed patch's long side (px) to bound the in-RAM seed pool (0 = off). Resamples oversized seeds -> changes rendered pixels (memory/quality tradeoff); keep well above ceil(scale_max*img_size) for near-lossless output",
           "name": "max_seed_px",
@@ -929,10 +938,14 @@
       "workers": 0
     },
     "Root \u2014 clean, 27 species": {
+      "aug_gamma": 0.2,
+      "aug_shear": 4.0,
       "bg_from_sources": true,
       "blur_max_sigma": 0.5,
+      "class_balanced": true,
       "class_mode": "subfolders",
       "degrade": true,
+      "extra_annotations": true,
       "fmt": "both",
       "img_size": 640,
       "jpeg_quality_max": 95,
@@ -940,10 +953,12 @@
       "masks": true,
       "max_seeds": 30,
       "min_seeds": 8,
+      "multilabel_csv": true,
       "neg_frac": 0.1,
       "noise_sigma": 3,
       "num_images": 6000,
       "out": "datasets/root",
+      "provenance": true,
       "qa_report": true,
       "rembg_provider": "auto",
       "scale_max": 0.16,
@@ -952,9 +967,12 @@
       "segment": "auto",
       "shadow_dir_mode": "scene",
       "sources": "seeds/Root",
+      "val_seed_holdout": 0.2,
       "visualize_count": 12
     },
     "Soybean \u2014 Healthy (single class)": {
+      "aug_gamma": 0.2,
+      "aug_shear": 4.0,
       "bg_from_sources": true,
       "blur_max_sigma": 0.6,
       "class_mode": "single",
@@ -969,6 +987,7 @@
       "noise_sigma": 3,
       "num_images": 2500,
       "out": "datasets/soybean_healthy",
+      "provenance": true,
       "qa_report": true,
       "rembg_provider": "auto",
       "scale_max": 0.18,
@@ -977,9 +996,12 @@
       "segment": "rembg",
       "shadow_dir_mode": "scene",
       "sources": "seeds/Test/images/Healthy",
+      "val_seed_holdout": 0.15,
       "visualize_count": 12
     },
     "Test \u2014 hardest (polygons)": {
+      "aug_gamma": 0.2,
+      "aug_shear": 4.0,
       "bg_from_sources": true,
       "blur_max_sigma": 0.6,
       "degrade": true,
@@ -993,6 +1015,7 @@
       "noise_sigma": 3,
       "num_images": 3000,
       "out": "datasets/test",
+      "provenance": true,
       "qa_report": true,
       "rembg_provider": "auto",
       "scale_max": 0.18,
@@ -1001,12 +1024,17 @@
       "segment": "rembg",
       "shadow_dir_mode": "scene",
       "sources": "seeds/Test/images",
+      "val_seed_holdout": 0.2,
       "visualize_count": 12
     },
     "Wheat \u2014 tiny, low-contrast": {
+      "aug_gamma": 0.2,
+      "aug_shear": 3.0,
       "bg_from_sources": true,
+      "class_balanced": true,
       "class_mode": "subfolders",
       "degrade": true,
+      "extra_annotations": true,
       "fmt": "both",
       "img_size": 512,
       "jpeg_quality_max": 95,
@@ -1015,10 +1043,12 @@
       "max_seeds": 45,
       "min_box_px": 6,
       "min_seeds": 12,
+      "multilabel_csv": true,
       "neg_frac": 0.1,
       "noise_sigma": 3,
       "num_images": 4000,
       "out": "datasets/wheat",
+      "provenance": true,
       "qa_report": true,
       "rembg_provider": "auto",
       "scale_max": 0.09,
@@ -1027,7 +1057,8 @@
       "seg_conf_thresh": 0.48,
       "segment": "auto",
       "shadow_dir_mode": "scene",
-      "sources": "seeds/Varietal purity of wheat seeds dataset"
+      "sources": "seeds/Varietal purity of wheat seeds dataset",
+      "val_seed_holdout": 0.2
     }
   },
   "recommended": {

@@ -8,11 +8,35 @@ unit suite (they are smoke-tested separately and gated behind the ``gpu`` marker
 
 from __future__ import annotations
 
+import cv2
 import numpy as np
 import pytest
 
+from multiseedgen.segmentation.loader import load_seeds, write_seg_report
 from multiseedgen.segmentation.masks import _mask_otsu
 from multiseedgen.segmentation.segment import extract_background, segment_seed
+
+
+def test_scan_limit_caps_the_sources_segmented(make_cfg, tmp_path):
+    """scan_limit must reduce the actual segmentation work (and thus the report counts),
+    not just the rendered preview: only N sources are processed, so scanned == N and
+    kept + skipped == N."""
+    src = tmp_path / "src"
+    src.mkdir()
+    for i in range(6):  # six separable dark-square-on-light sources (otsu keeps them)
+        img = np.full((48, 48, 3), 200, np.uint8)
+        img[14:34, 14:34] = 30
+        cv2.imwrite(str(src / f"s{i}.png"), img)
+
+    cfg = make_cfg(
+        sources=src, out=tmp_path / "out", segment="otsu", jobs=1, use_cache=False, scan_limit=3
+    )
+    _seeds, _names, _bgs, results = load_seeds(cfg)
+    assert len(results) == 3  # only the sampled subset was segmented (not all 6)
+
+    summary = write_seg_report(cfg.out, results, cfg)
+    assert summary["scanned"] == 3
+    assert summary["kept"] + summary["skipped"] == 3
 
 
 @pytest.mark.parametrize("method", ["otsu", "grabcut", "threshold"])

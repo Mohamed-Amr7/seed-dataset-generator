@@ -14,12 +14,18 @@ config:
   rembg_provider: auto
   # gpu_seg_jobs omitted -> auto-scales sessions to free VRAM (set a number to cap)
   fmt: yolo-seg
+  # per-seed augmentation (label-safe; robustness on the hard photometric case)
+  aug_gamma: 0.2
+  aug_shear: 4.0
   degrade: true
   noise_sigma: 3
   jpeg_quality_min: 75
   jpeg_quality_max: 95
   blur_max_sigma: 0.6
   shadow_dir_mode: scene
+  # leakage-safe split + provenance (single class -> no class-balanced; yolo-seg -> no COCO extras)
+  val_seed_holdout: 0.2     # source seeds reserved for val only (never seen in train)
+  provenance: true          # provenance_<split>.jsonl maps boxes -> source seeds
   qa_report: true
   visualize_count: 12
   seed: 7

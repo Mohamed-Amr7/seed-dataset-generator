@@ -11,7 +11,8 @@ import type {
   FsList,
   RunDetail,
   RunsList,
-  SegCheckResponse,
+  SegCheckStart,
+  SegResultResponse,
   Split,
   StartRunResponse,
   UploadResponse,
@@ -49,11 +50,14 @@ export const stopRun = (rid: string) =>
   })
 
 export const segCheck = (config: ConfigDict, n: number, out?: string) =>
-  apiFetch<SegCheckResponse>('/api/seg/check', {
+  apiFetch<SegCheckStart>('/api/seg/check', {
     method: 'POST',
     headers: JSON_HEADERS,
     body: JSON.stringify({ config, n, out }),
   })
+
+export const getSegResult = (out: string) =>
+  apiFetch<SegResultResponse>(`/api/seg/result?out=${enc(out)}`)
 
 export const listDatasets = (root?: string) =>
   apiFetch<DatasetsList>('/api/datasets' + (root ? `?root=${enc(root)}` : ''))

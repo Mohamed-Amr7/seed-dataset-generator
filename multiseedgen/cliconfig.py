@@ -385,6 +385,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     g.add_argument("--max-sources", type=int, default=0, help="0 = use all")
     g.add_argument(
+        "--scan-limit",
+        type=int,
+        default=0,
+        help="segment only a representative round-robin sample of N sources "
+        "(0 = all); speeds up --check-seeds without skewing per-class coverage",
+    )
+    g.add_argument(
         "--max-seed-px",
         type=int,
         default=0,

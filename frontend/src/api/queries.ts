@@ -4,6 +4,7 @@ import { getSchema, listRuns } from './endpoints'
 export const qk = {
   schema: ['schema'] as const,
   runs: ['runs'] as const,
+  segResult: (out: string) => ['segResult', out] as const,
 }
 
 /** The form descriptor rarely changes within a session, so cache it for the session. */
