@@ -88,8 +88,10 @@ docker compose -f docker/compose.gpu.yaml --profile sam run --rm multiseedgen-sa
 
 The repo `models/` is mounted at `/app/models`, so the relative `--sam-checkpoint`
 path resolves inside the container. torch is CPU-only by default (works with no
-NVIDIA toolkit); see [`docker/GPU_SETUP.md`](docker/GPU_SETUP.md) "Path 3" for the
-GPU build and details.
+NVIDIA toolkit). For **GPU SAM**, use the `sam-gpu` profile instead
+(`--profile sam-gpu … multiseedgen-sam-gpu`, CUDA torch, port 8002) — it requires
+the NVIDIA Container Toolkit. See [`docker/GPU_SETUP.md`](docker/GPU_SETUP.md)
+"Path 3" for both.
 
 ### Prompt modes (`sam.prompt_type`)
 - `automatic` (default): `SamAutomaticMaskGenerator`; the central, large, non-frame-filling

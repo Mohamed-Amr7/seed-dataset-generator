@@ -51,16 +51,23 @@ NOT installed on this host yet (verified: `docker run --gpus all ...` fails with
 absent). Install it once, as root (Fedora):
 
 ```bash
-# 1) install the toolkit
+# 1) add the NVIDIA Container Toolkit repo (REQUIRED on Fedora - the package is NOT
+#    in the default repos; the rpmfusion *driver* repo does not provide it). Without
+#    this, `dnf install nvidia-container-toolkit` fails with "No match for argument".
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo \
+  | sudo tee /etc/yum.repos.d/nvidia-container-toolkit.repo
+
+# 2) install the toolkit
 sudo dnf install -y nvidia-container-toolkit
 
-# 2) wire it into Docker (writes /etc/docker/daemon.json + CDI specs)
-sudo nvidia-ctk runtime configure --runtime=docker
-sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml   # optional, CDI mode
+# 3) wire it into Docker. This host's Docker uses native CDI (it lists /etc/cdi as a
+#    spec dir), so GENERATE THE CDI SPEC - it is required here, not optional:
+sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
+sudo nvidia-ctk runtime configure --runtime=docker   # also register the nvidia runtime
 sudo systemctl restart docker
 
-# 3) verify the GPU is now visible inside a container
-docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
+# 4) verify the GPU is now visible inside a container
+docker run --rm --gpus all nvidia/cuda:12.6.2-base-ubuntu22.04 nvidia-smi
 ```
 
 After that, build and run MultiSeedGen on the GPU:
@@ -104,15 +111,52 @@ The `sam` compose **profile** is the opt-in switch: a plain
 `docker compose -f docker/compose.gpu.yaml up` ignores `multiseedgen-sam`
 entirely, so the default path never builds torch.
 
+The `sam` compose **profile** is the opt-in switch: a plain
+`docker compose -f docker/compose.gpu.yaml up` ignores both SAM services entirely,
+so the default path never builds torch.
+
 Notes:
-- **CPU by default.** The SAM service has **no GPU reservation** because a device
-  reservation fails the run without the NVIDIA Container Toolkit. For GPU SAM,
-  install the toolkit (Path 2), rebuild with a CUDA torch wheel index
-  (`--build-arg TORCH_INDEX=https://download.pytorch.org/whl/cu124`), and add a
-  `deploy.reservations.devices` block to the `multiseedgen-sam` service. vit_b fits
-  the 6 GB card.
 - **Checkpoint path.** `--sam-checkpoint` is resolved against the container WORKDIR
   `/app`; the compose service mounts the repo `models/` at `/app/models`, so the
   relative `models/sam_vit_b_01ec64.pth` above works as-is.
-- The SAM image is ~2–2.6 GB (CPU torch) vs the ~light default — which is exactly
-  why it is kept opt-in.
+- The CPU SAM image is ~2.6 GB vs the ~light default — which is exactly why it is
+  kept opt-in. CPU SAM is fine for spot-checks (~100 s/image for vit_b) but slow for
+  full datasets; use the GPU service below for throughput.
+
+### SAM on the GPU (`multiseedgen-sam-gpu`)
+
+A second opt-in service builds the same image with **CUDA torch** and reserves the
+GPU. vit_b fits the 6 GB RTX 3060.
+
+**Prerequisite — install the NVIDIA Container Toolkit (Path 2 above), as root.**
+Without it the GPU reservation fails with *"could not select device driver"*. This
+is the one step that cannot be done unprivileged:
+```bash
+sudo dnf install -y nvidia-container-toolkit
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+docker run --rm --gpus all nvidia/cuda:12.6.2-base-ubuntu22.04 nvidia-smi   # verify
+```
+
+Then build + run the GPU SAM service (its own `sam-gpu` profile, port 8002):
+```bash
+# Web UI on the GPU:
+docker compose -f docker/compose.gpu.yaml --profile sam-gpu up --build multiseedgen-sam-gpu
+#   -> http://localhost:8002
+
+# or a batch CLI run on the GPU:
+docker compose -f docker/compose.gpu.yaml --profile sam-gpu run --rm multiseedgen-sam-gpu \
+    python -m multiseedgen --sources /data/seeds --out /data/out --num-images 2000 \
+    --segment sam --sam-checkpoint models/sam_vit_b_01ec64.pth --sam-model-type vit_b
+# expect the log line:  [sam] loaded vit_b on cuda
+```
+
+Notes:
+- The CUDA torch wheel is **cu126** (`docker/compose.gpu.yaml` build arg
+  `TORCH_INDEX`). Driver 580 is CUDA-13-capable and backward-compatible with the
+  CUDA-12.6 runtime that the torch wheel bundles; to match CUDA 13 exactly instead,
+  set `TORCH_INDEX=https://download.pytorch.org/whl/cu130`.
+- The GPU image is larger (~6 GB; CUDA torch bundles its own CUDA runtime). It is
+  unrelated to the rembg cu12 stack — torch ships self-contained CUDA libs.
+- Cap concurrent SAM workers with `--gpu-seg-jobs` if VRAM is tight (vit_b is light,
+  but rembg + SAM together can pressure 6 GB).

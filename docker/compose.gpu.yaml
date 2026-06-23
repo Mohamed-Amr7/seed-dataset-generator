@@ -43,10 +43,7 @@ services:
     profiles: ["sam"]
     build:
       context: ..
-      dockerfile: docker/Dockerfile.sam
-      # For a CUDA build (needs the NVIDIA toolkit), uncomment:
-      # args:
-      #   TORCH_INDEX: https://download.pytorch.org/whl/cu124
+      dockerfile: docker/Dockerfile.sam   # CPU torch (default TORCH_INDEX)
     image: multiseedgen:sam
     container_name: multiseedgen-sam
     ports:
@@ -60,6 +57,41 @@ services:
     environment:
       - MULTISEEDGEN_DATA_ROOT=/data  # web UI browses datasets under here
     # NO deploy.reservations.devices: a GPU reservation FAILS the run when the NVIDIA
-    # Container Toolkit is absent. Add it (and rebuild with the CUDA TORCH_INDEX) only
-    # after installing the toolkit - see GPU_SETUP.md.
+    # Container Toolkit is absent. Use the multiseedgen-sam-gpu service below for GPU.
+    restart: unless-stopped
+
+  # OPT-IN SAM on the GPU. Same image but built with CUDA torch (cu126 - driver 580 is
+  # backward-compatible; use cu130 to match CUDA 13 exactly). REQUIRES the NVIDIA
+  # Container Toolkit (GPU_SETUP.md "Path 2"); without it the device reservation fails
+  # the run. Gated behind its own "sam-gpu" profile so neither it nor the CPU SAM
+  # service is ever touched by a default `docker compose up`.
+  #   docker compose -f docker/compose.gpu.yaml --profile sam-gpu up --build multiseedgen-sam-gpu
+  #   docker compose -f docker/compose.gpu.yaml --profile sam-gpu run --rm multiseedgen-sam-gpu \
+  #       python -m multiseedgen --sources /data/seeds --out /data/out --num-images 2000 \
+  #       --segment sam --sam-checkpoint models/sam_vit_b_01ec64.pth --sam-model-type vit_b
+  multiseedgen-sam-gpu:
+    profiles: ["sam-gpu"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.sam
+      args:
+        TORCH_INDEX: https://download.pytorch.org/whl/cu126   # CUDA torch wheels
+    image: multiseedgen:sam-gpu
+    container_name: multiseedgen-sam-gpu
+    ports:
+      - "8002:8000"                   # distinct port from the CPU SAM service
+    volumes:
+      - ../seeds:/data/seeds:ro
+      - ./_out:/data/out
+      - ./_models:/models
+      - ../models:/app/models:ro
+    environment:
+      - MULTISEEDGEN_DATA_ROOT=/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     restart: unless-stopped
