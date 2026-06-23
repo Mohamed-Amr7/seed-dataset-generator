@@ -323,48 +323,68 @@ async def ws_run(ws: WebSocket, rid: str):
 # --------------------------------------------------------------------------- #
 @app.post("/api/seg/check")
 async def seg_check(req: SegCheckRequest) -> dict:
+    """Launch a tracked, stoppable segmentation check (a tuner run that produces no
+    dataset) and return its run id. Progress streams over ``/ws/runs/{run_id}``, it is
+    cancelled via ``/api/runs/{run_id}/stop``, and the results (report + per-seed
+    manifest) are read afterwards from ``/api/seg/result``.
+
+    ``n`` caps how many sources are actually segmented (``scan_limit``) AND how many
+    cut-outs render — so the report counts and the gallery both reflect exactly N."""
     cfg = dict(req.config)
-    n = int(req.n)
+    n = max(1, int(req.n))
     out = _safe(req.out or str(TMP / "msg_segcheck"))
-    cfg.update({"out": str(out), "num_images": 0, "check_seeds": n})
+    cfg.update({"out": str(out), "num_images": 0, "check_seeds": n, "scan_limit": n})
     cfg.setdefault("cache_dir", str(TMP / "msg_segcache"))  # warm across re-checks
-    cfg = _clean_config(cfg)
-    if not cfg.get("sources"):
-        raise HTTPException(400, "'sources' is required")
-    cfg_path = _write_config_json(cfg)
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            sys.executable,
-            "-m",
-            "multiseedgen",
-            "--config",
-            str(cfg_path),
-            cwd=str(ROOT),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-            limit=1 << 20,
-            env={**os.environ, "PYTHONUNBUFFERED": "1"},
-        )
-        raw, _ = await proc.communicate()
-    finally:
-        Path(cfg_path).unlink(missing_ok=True)
-    log = raw.decode("utf-8", "replace")
+    rid = await _launch(cfg, label="seg")
+    return {"run_id": rid, "out": RUNS[rid]["out"]}
+
+
+@app.get("/api/seg/result")
+def seg_result(out: str = Query(...)) -> dict:
+    """Read a finished (or stopped) segmentation check's report + per-seed manifest.
+
+    Tolerates a missing/corrupt report or manifest (older runs, or a check stopped /
+    crashed mid-render) by falling back to a bare glob of the rendered cut-outs."""
+    d = _safe(out)
     report = None
-    rp = out / "seg_report.json"
+    rp = d / "seg_report.json"
     if rp.exists():
-        try:  # partial/corrupt report -> keep the log
+        try:  # partial/corrupt report -> still return the images
             report = json.loads(rp.read_text())
         except (ValueError, OSError):
             report = None
-    checks = sorted((out / "seed_check").glob("*.png")) if (out / "seed_check").exists() else []
-    imgs = [f"/api/file?path={c}" for c in checks]
-    return {
-        "returncode": proc.returncode,
-        "report": report,
-        "images": imgs,
-        "log": log[-4000:],
-        "out": str(out),
-    }
+    seeds: list[dict] = []
+    sd = d / "seed_check"
+    man = sd / "manifest.json"
+    if man.exists():
+        try:
+            for e in json.loads(man.read_text()):
+                p = sd / e["file"]
+                seeds.append(
+                    {
+                        "url": f"/api/file?path={p}",
+                        "source": e.get("source"),
+                        "status": e.get("status"),
+                        "confidence": e.get("confidence"),
+                        "method": e.get("method"),
+                        "reason": e.get("reason"),
+                    }
+                )
+        except (ValueError, OSError, KeyError, TypeError):
+            seeds = []
+    if not seeds and sd.exists():  # no/partial manifest -> glob with unknown metadata
+        for c in sorted(sd.glob("*.png")):
+            seeds.append(
+                {
+                    "url": f"/api/file?path={c}",
+                    "source": None,
+                    "status": "kept",
+                    "confidence": None,
+                    "method": None,
+                    "reason": None,
+                }
+            )
+    return {"report": report, "out": str(d), "seeds": seeds}
 
 
 # --------------------------------------------------------------------------- #

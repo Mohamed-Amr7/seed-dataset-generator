@@ -106,7 +106,11 @@ ignore = [
 "tests/*" = ["E402", "C408"]                # importorskip-guarded imports; dict(k=v) test kwargs
 
 [tool.mypy]
-python_version = "3.10"
+# 3.12 matches the CI/runtime interpreter. numpy >= 2.2 ships PEP 695 `type` statements
+# in its bundled stubs, which mypy rejects under an older target ("Type statement is only
+# supported in Python 3.12 and greater"). 3.10-syntax compatibility for our own code is
+# still enforced by ruff (target-version = "py310").
+python_version = "3.12"
 ignore_missing_imports = true               # cv2/rembg/torch/segment_anything ship no stubs
 warn_redundant_casts = true
 check_untyped_defs = true

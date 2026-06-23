@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useSchema } from '@/api/queries'
+import { useBrowseStore } from '@/store/browseStore'
 import { useConfigStore } from '@/store/configStore'
 import { schemaDefaults } from '@/lib/schema'
 import { useRunSocket } from '@/hooks/useRunSocket'
@@ -27,6 +28,16 @@ export default function App() {
   const replace = useConfigStore((s) => s.replace)
   const [tab, setTab] = useState<TabId>(readHash)
   const socket = useRunSocket()
+
+  // When a finished run asks to be browsed, jump to the Browse tab (which consumes the path).
+  // Subscribing (vs. reading the value in render) keeps the setState out of the effect body.
+  useEffect(
+    () =>
+      useBrowseStore.subscribe((s, prev) => {
+        if (s.requestedPath && s.requestedPath !== prev.requestedPath) setTab('browse')
+      }),
+    [],
+  )
 
   // Seed the form with schema defaults + recommended overlay on first load (unless a
   // persisted config already rehydrated from localStorage).

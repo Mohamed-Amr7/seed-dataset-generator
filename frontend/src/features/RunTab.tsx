@@ -1,11 +1,12 @@
-import { Play, Square } from 'lucide-react'
-import { useEffect } from 'react'
+import { FolderSearch, Play, Square } from 'lucide-react'
+import { useEffect, useMemo } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ApiError } from '@/api/client'
 import { startRun, stopRun } from '@/api/endpoints'
-import { qk } from '@/api/queries'
+import { qk, useRuns } from '@/api/queries'
 import type { FormSchema } from '@/api/types'
 import type { RunSocket } from '@/hooks/useRunSocket'
+import { useBrowseStore } from '@/store/browseStore'
 import { cleanConfig, useConfigStore } from '@/store/configStore'
 import { toast } from '@/store/toastStore'
 import { validateRunConfig } from '@/lib/validation'
@@ -21,9 +22,18 @@ import { StatusBadge } from '@/components/StatusBadge'
 export function RunTab({ schema, socket }: { schema: FormSchema; socket: RunSocket }) {
   const config = useConfigStore((s) => s.config)
   const setField = useConfigStore((s) => s.setField)
+  const openInBrowser = useBrowseStore((s) => s.openInBrowser)
   const queryClient = useQueryClient()
   const validation = validateRunConfig(config)
   const running = socket.status === 'running'
+
+  // The active run's output dir, looked up from the run list (single source of truth for
+  // `out`). Drives the "Browse dataset" hand-off once a generation finishes.
+  const { data: runsData } = useRuns(running ? 2000 : false)
+  const activeOut = useMemo(
+    () => runsData?.runs.find((r) => r.id === socket.runId)?.out ?? null,
+    [runsData, socket.runId],
+  )
 
   const startMut = useMutation({
     mutationFn: () => startRun(cleanConfig(config)),
@@ -104,6 +114,16 @@ export function RunTab({ schema, socket }: { schema: FormSchema; socket: RunSock
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold">Run log</h2>
           <StatusBadge status={socket.status} />
+          {socket.status === 'done' && activeOut && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="ml-auto"
+              onClick={() => openInBrowser(activeOut)}
+            >
+              <FolderSearch /> Browse dataset
+            </Button>
+          )}
         </div>
         <RunLog lines={socket.lines} className="min-h-[50vh] flex-1" />
       </div>

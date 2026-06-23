@@ -1,9 +1,10 @@
 import { Download, FolderOpen, Search } from 'lucide-react'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { ApiError } from '@/api/client'
 import { datasetDownloadUrl, datasetInfo, listDatasets } from '@/api/endpoints'
 import type { Split } from '@/api/types'
+import { useBrowseStore } from '@/store/browseStore'
 import { usePickerStore } from '@/store/pickerStore'
 import { toast } from '@/store/toastStore'
 import { Button } from '@/components/ui/button'
@@ -25,11 +26,32 @@ import { SegReport } from '@/components/SegReport'
 export function BrowseTab() {
   const openPicker = usePickerStore((s) => s.openPicker)
   const [root, setRoot] = useState('')
-  const [selected, setSelected] = useState('')
+  // A hand-off path pending at mount is applied immediately (initializers), so a finished run
+  // that switches here lands on its dataset without a Scan (datasetInfo loads any sandboxed path).
+  const [selected, setSelected] = useState(() => useBrowseStore.getState().requestedPath ?? '')
   const [split, setSplit] = useState<Split>('train')
   const [idx, setIdx] = useState(0)
   const [total, setTotal] = useState(0)
   const [name, setName] = useState('')
+  // Paths handed off from the Run tab ("Browse dataset"); shown in the picker without a Scan.
+  const [extra, setExtra] = useState<string[]>(() => {
+    const p = useBrowseStore.getState().requestedPath
+    return p ? [p] : []
+  })
+
+  // Clear the hand-off captured above, and react to later requests while this tab stays
+  // mounted. setState lives in the subscription callback (an external event), not the effect body.
+  useEffect(() => {
+    useBrowseStore.getState().consume()
+    return useBrowseStore.subscribe((s) => {
+      const path = s.requestedPath
+      if (!path) return
+      setExtra((e) => (e.includes(path) ? e : [path, ...e]))
+      setSelected(path)
+      setIdx(0)
+      useBrowseStore.getState().consume()
+    })
+  }, [])
 
   // Selecting a dataset or split resets paging to the first image.
   const selectDataset = (d: string) => {
@@ -61,7 +83,7 @@ export function BrowseTab() {
     setName(nm)
   }, [])
 
-  const datasets = scanMut.data?.datasets ?? []
+  const datasets = [...new Set([...extra, ...(scanMut.data?.datasets ?? [])])]
 
   return (
     <div className="flex flex-col gap-4">

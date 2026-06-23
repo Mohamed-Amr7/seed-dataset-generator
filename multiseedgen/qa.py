@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
 
 import cv2
 import numpy as np
@@ -194,13 +193,51 @@ def _checkerboard(h: int, w: int, sq: int = 12) -> np.ndarray:
     return np.where(c[..., None] == 0, hi, lo).astype(np.uint8)
 
 
-def check_segmentation(seeds: list[Seed], class_names: list[str], out: Path, n: int) -> None:
+def _label_bar(img: np.ndarray, text: str, color=(255, 255, 255)) -> None:
+    """Draw a readable caption on a dark bar across the top of ``img`` (in place)."""
+    h, w = img.shape[:2]
+    bar = max(14, int(h * 0.16))
+    cv2.rectangle(img, (0, 0), (w, bar), (0, 0, 0), -1)
+    cv2.putText(img, text, (3, bar - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.38, color, 1, cv2.LINE_AA)
+
+
+def _fit_thumb(bgr: np.ndarray, long_side: int = 220) -> np.ndarray:
+    """Downscale ``bgr`` so its longest side is at most ``long_side`` px (no upscaling)."""
+    h, w = bgr.shape[:2]
+    m = max(h, w)
+    if m <= long_side:
+        return bgr.copy()
+    s = long_side / m
+    return cv2.resize(bgr, (max(1, int(w * s)), max(1, int(h * s))), interpolation=cv2.INTER_AREA)
+
+
+def check_segmentation(
+    seeds: list[Seed],
+    class_names: list[str],
+    cfg: Config,
+    n: int,
+    seg_results: list | None = None,
+) -> None:
     """Composite each cut-out onto a magenta checkerboard so any retained
     background is glaringly obvious, and draw the exact box the generator uses.
-    A clean cut-out shows ONLY the seed over the checker pattern."""
+    A clean cut-out shows ONLY the seed over the checker pattern.
+
+    Full runs (``cfg.num_images > 0``) keep the original kept-only output, byte for
+    byte. In tuner mode (``num_images <= 0``) it additionally stamps each kept cut-out
+    with its method+confidence, renders the *skipped* sources (re-read from disk) so a
+    user can see what was rejected and why, and writes a ``manifest.json`` listing every
+    rendered entry's status/confidence/reason for the web tuner. The manifest is written
+    LAST, so its presence means the render completed (a stopped/crashed check has none)."""
+    out = cfg.out
     d = out / "seed_check"
     d.mkdir(parents=True, exist_ok=True)
+    tuner = cfg.num_images <= 0
     pad = 18
+    manifest: list[dict] = []
+
+    def _cls(cid: int) -> str:
+        return class_names[cid] if 0 <= cid < len(class_names) else str(cid)
+
     for i, s in enumerate(seeds[:n]):
         patch = s.rgba
         ph, pw = patch.shape[:2]
@@ -219,9 +256,54 @@ def check_segmentation(seeds: list[Seed], class_names: list[str], out: Path, n: 
                 (0, 0, 255),
                 1,
             )
-        cv2.imwrite(str(d / f"seed_{i:03d}_{class_names[s.class_id]}.png"), img)
+        if tuner:
+            fname = f"seed_kept_{i:04d}.png"
+            _label_bar(img, f"{s.method or '?'}  {s.confidence:.2f}")
+            cv2.imwrite(str(d / fname), img)
+            manifest.append(
+                {
+                    "file": fname,
+                    "source": s.source,
+                    "status": "kept",
+                    "confidence": round(float(s.confidence), 3),
+                    "method": s.method,
+                    "reason": "",
+                }
+            )
+        else:  # full-run mode: original filename + no overlay -> output unchanged
+            cv2.imwrite(str(d / f"seed_{i:03d}_{_cls(s.class_id)}.png"), img)
+
+    if tuner and seg_results:
+        skipped = [r for r in seg_results if r.report.get("skipped")]
+        for j, r in enumerate(skipped[:n]):
+            rep = r.report
+            src_rel = rep.get("source") or r.source
+            orig = cv2.imread(str(cfg.sources / src_rel), cv2.IMREAD_COLOR)
+            if orig is None:  # moved/unreadable original -> skip its thumbnail
+                continue
+            reason = rep.get("skip_reason", "?")
+            conf = float(rep.get("confidence", 0.0))
+            thumb = _fit_thumb(orig, 220)
+            _label_bar(thumb, f"SKIP {reason}  {conf:.2f}", color=(80, 80, 255))
+            fname = f"seed_skip_{j:04d}.png"
+            cv2.imwrite(str(d / fname), thumb)
+            manifest.append(
+                {
+                    "file": fname,
+                    "source": src_rel,
+                    "status": "skipped",
+                    "confidence": round(conf, 3),
+                    "method": rep.get("method", "-"),
+                    "reason": reason,
+                }
+            )
+
+    if tuner:  # write LAST: presence == complete render (stop/crash leaves none)
+        (d / "manifest.json").write_text(json.dumps(manifest, indent=2))
+
     logger.info(
-        f"  wrote {min(n, len(seeds))} cut-out check image(s) to {d}\n"
+        f"  wrote {len(manifest) if tuner else min(n, len(seeds))} cut-out check "
+        f"image(s) to {d}\n"
         f"  -> open them: a clean cut-out shows ONLY the seed on the checker "
         f"pattern. Any white/coloured patch around it means segmentation kept "
         f"background; try --segment otsu|grabcut|rembg or adjust --bg-tolerance."

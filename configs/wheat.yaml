@@ -17,10 +17,21 @@ config:
   rembg_provider: auto
   fmt: both
   masks: true
+  # per-seed augmentation (label-safe). Tiny faint seeds -> modest shear.
+  aug_gamma: 0.2
+  aug_shear: 3.0
+  # class-balanced sampling (counters per-variety source-count imbalance)
+  class_balanced: true
+  # richer export (COCO is written here via fmt: both)
+  extra_annotations: true
+  multilabel_csv: true
   degrade: true
   noise_sigma: 3
   jpeg_quality_min: 80
   jpeg_quality_max: 95
   shadow_dir_mode: scene
+  # leakage-safe split + provenance
+  val_seed_holdout: 0.2
+  provenance: true
   qa_report: true
   seed: 7

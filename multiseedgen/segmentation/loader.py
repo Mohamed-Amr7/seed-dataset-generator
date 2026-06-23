@@ -217,6 +217,31 @@ def load_seeds(cfg: Config):
     cache_dir = cfg.cache_dir if cfg.cache_dir is not None else (cfg.out / ".seg_cache")
     tasks = [(str(f), cid) for cid, files in groups for f in files if f.suffix.lower() in IMG_EXTS]
 
+    # scan_limit selects WHICH sources to segment (a quick, representative sample for the
+    # tuner) — it is NOT a per-image parameter, so like max_seed_px below it must never
+    # enter the seg cache key. Round-robin across classes so every class is represented;
+    # within-class order stays sorted so the same N picks the same files (warm cache).
+    if cfg.scan_limit and cfg.scan_limit > 0 and len(tasks) > cfg.scan_limit:
+        per_class: dict[int, list] = {}
+        for t in tasks:
+            per_class.setdefault(t[1], []).append(t)
+        sampled: list = []
+        col_idx = 0
+        while len(sampled) < cfg.scan_limit:
+            added = False
+            for cid in sorted(per_class):
+                col = per_class[cid]
+                if col_idx < len(col):
+                    sampled.append(col[col_idx])
+                    added = True
+                    if len(sampled) >= cfg.scan_limit:
+                        break
+            if not added:  # every class exhausted
+                break
+            col_idx += 1
+        tasks = sampled
+        logger.info(f"  scan_limit={cfg.scan_limit}: segmenting {len(tasks)} sampled source(s)")
+
     # Bound concurrency when rembg runs on the GPU: many worker processes would each
     # open a CUDA session and exhaust VRAM. Only caps when GPU rembg is the method
     # for many sources (forced --segment rembg/sam, or a --segment-map); classical
@@ -272,6 +297,7 @@ def load_seeds(cfg: Config):
                     class_id=r.class_id,
                     source=r.source,
                     method=r.report.get("method", ""),
+                    confidence=float(r.report.get("confidence", 0.0)),
                 )
             )
             if cfg.bg_from_sources and r.background is not None:
