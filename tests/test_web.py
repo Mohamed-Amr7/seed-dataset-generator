@@ -250,6 +250,19 @@ def test_upload_seeds_rejects_non_decodable_image(client, tmp_path):
     assert "decodable" in r.text
 
 
+def test_upload_seeds_is_atomic_on_bad_file(client, tmp_path):
+    # A mixed batch (one good, one bad) must be rejected whole: nothing written, and the
+    # destination folder is not even created.
+    dest = tmp_path / "atomic"
+    files = [
+        ("files", ("ok.png", _png_bytes(), "image/png")),
+        ("files", ("bad.exe", b"MZ\x90\x00", "application/octet-stream")),
+    ]
+    r = client.post("/api/seeds/upload", data={"dest": str(dest)}, files=files)
+    assert r.status_code == 400
+    assert not dest.exists()  # no partial write, no folder left behind
+
+
 def test_upload_seeds_strips_path_components(client, tmp_path):
     # a malicious filename with traversal must be reduced to its base name
     dest = tmp_path / "s3"

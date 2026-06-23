@@ -649,9 +649,11 @@ async def upload_seeds(
     d = _safe(dest)
     if d.exists() and not d.is_dir():
         raise HTTPException(400, "destination exists and is not a directory")
-    d.mkdir(parents=True, exist_ok=True)
 
-    saved: list[str] = []
+    # Validate the whole batch BEFORE touching disk, so a single bad file can't leave a
+    # half-written upload (and the destination folder isn't created on a rejected batch).
+    # The endpoint is all-or-nothing.
+    validated: list[tuple[str, bytes]] = []
     for uf in files:
         fname = Path(uf.filename or "").name  # strip any path components from the name
         if not fname:
@@ -665,12 +667,19 @@ async def upload_seeds(
             )
         if cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR) is None:
             raise HTTPException(400, f"not a decodable image: {fname}")
-        (d / fname).write_bytes(data)
-        saved.append(fname)
+        validated.append((fname, data))
 
-    if not saved:
+    if not validated:
         raise HTTPException(400, "no valid image files uploaded")
-    return UploadResponse(saved_dir=str(d), files=saved, count=len(saved))
+
+    # Everything passed — only now create the folder and write the files.
+    d.mkdir(parents=True, exist_ok=True)
+    for fname, data in validated:
+        (d / fname).write_bytes(data)
+
+    return UploadResponse(
+        saved_dir=str(d), files=[name for name, _ in validated], count=len(validated)
+    )
 
 
 # --------------------------------------------------------------------------- #
