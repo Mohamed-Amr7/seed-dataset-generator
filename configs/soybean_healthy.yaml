@@ -1,5 +1,5 @@
 # Soybean (Healthy) — single class; pale soybean on cream tray, cast shadow + watermark.
-# Narrow subset of seeds/Test/images (133 Healthy sources). See RECOMMENDED_SETTINGS.md.
+# Narrow subset of seeds/Test/images (133 Healthy sources). See docs/RECOMMENDED_SETTINGS.md.
 config:
   sources: seeds/Test/images/Healthy
   out: datasets/soybean_healthy

@@ -1,4 +1,4 @@
-# Test — hardest (cast shadow + watermark); polygon labels. See RECOMMENDED_SETTINGS.md.
+# Test — hardest (cast shadow + watermark); polygon labels. See docs/RECOMMENDED_SETTINGS.md.
 config:
   sources: seeds/Test/images
   out: datasets/test

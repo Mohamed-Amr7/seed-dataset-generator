@@ -1,0 +1,82 @@
+"""Unit tests for the classical (CPU-only) segmentation paths.
+
+Only the deterministic, dependency-free methods are covered here - ``otsu`` / ``grabcut``
+/ ``threshold`` / ``alpha``. The learned backends (``rembg`` / ``sam``) need onnxruntime /
+torch + a checkpoint and a live GPU session, so they are out of scope for the in-memory
+unit suite (they are smoke-tested separately and gated behind the ``gpu`` marker).
+"""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+from multiseedgen.segmentation.masks import _mask_otsu
+from multiseedgen.segmentation.segment import extract_background, segment_seed
+
+
+@pytest.mark.parametrize("method", ["otsu", "grabcut", "threshold"])
+def test_classical_methods_return_cropped_bgra_patch(make_cfg, seed_on_uniform_bg, method):
+    """Each forced classical method cuts the object out as a tight BGRA patch.
+
+    Forced (non-``auto``) methods skip the confidence gate, so a clean high-contrast
+    object is always retained."""
+    cfg = make_cfg(segment=method, rembg_fallback=False)
+
+    patch, report = segment_seed(seed_on_uniform_bg, cfg)
+
+    assert patch is not None, f"{method} unexpectedly skipped the source"
+    assert patch.ndim == 3 and patch.shape[2] == 4  # tight BGRA cut-out
+    assert report["method"] == method
+    assert report["skipped"] is False
+
+
+def test_alpha_method_uses_existing_alpha_channel(make_cfg, seed_cutout):
+    """A source that already carries a meaningful alpha channel is cropped to it with
+    full confidence - no thresholding involved."""
+    cfg = make_cfg(segment="alpha")
+
+    patch, report = segment_seed(seed_cutout.rgba, cfg)
+
+    assert patch is not None and patch.shape[2] == 4
+    assert report["method"] == "alpha"
+    assert report["confidence"] == 1.0
+
+
+def test_segment_seed_skips_a_blank_source(make_cfg):
+    """A uniform frame has no separable object -> the source is skipped, not faked."""
+    cfg = make_cfg(segment="otsu", rembg_fallback=False)
+    blank = np.full((48, 48, 3), 128, np.uint8)
+
+    patch, report = segment_seed(blank, cfg)
+
+    assert patch is None
+    assert report["skipped"] is True
+
+
+def test_mask_otsu_is_binary_and_non_degenerate(seed_on_uniform_bg):
+    """The raw Otsu mask is a 0/255 binary image that separates *something* from the
+    background (neither all-foreground nor all-background)."""
+    mask = _mask_otsu(seed_on_uniform_bg)
+
+    assert mask.shape == seed_on_uniform_bg.shape[:2]
+    assert set(np.unique(mask)).issubset({0, 255})
+    assert 0.0 < (mask > 0).mean() < 1.0
+
+
+def test_extract_background_inpaints_to_same_size_bgr(make_cfg, seed_on_uniform_bg):
+    """Recovering the bare background returns a same-shape BGR canvas with the object
+    inpainted away (used by ``--bg-from-sources``)."""
+    cfg = make_cfg(segment="otsu")
+
+    bg = extract_background(seed_on_uniform_bg, cfg)
+
+    assert bg is not None
+    assert bg.shape == seed_on_uniform_bg.shape  # same HxWx3
+    assert bg.dtype == np.uint8
+
+
+def test_extract_background_is_none_for_transparent_source(make_cfg, seed_cutout):
+    """A cut-out with a transparent border has no surface behind it to recover."""
+    cfg = make_cfg(segment="otsu")
+    assert extract_background(seed_cutout.rgba, cfg) is None

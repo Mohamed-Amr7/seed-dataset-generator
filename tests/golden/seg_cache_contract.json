@@ -1,0 +1,120 @@
+{
+  "_seg_version": 6,
+  "grabcut": {
+    "key": "7595b5a5d05fab70c285ef90cd4a107a",
+    "key_bg": "20b5d9c06ec3dca90e8bccc9b6f1425f",
+    "signature": {
+      "bg_tolerance": 28.0,
+      "ghost_blend": 1.0,
+      "grabcut_iters": 5,
+      "grabcut_min_object_area": 0.0,
+      "grabcut_rect_margin": 0.06,
+      "morph_kernel": 5,
+      "rembg_fallback": false,
+      "seg_conf_thresh": 0.55,
+      "segment": "grabcut",
+      "shadow_sat_max": 0.35,
+      "strip_shadow": true
+    }
+  },
+  "otsu_no_fallback": {
+    "key": "5094bfff1ef52598d4ab2bf00b976f99",
+    "key_bg": "2d1edd24e15a0f0167a1bfc180689651",
+    "signature": {
+      "bg_tolerance": 28.0,
+      "ghost_blend": 1.0,
+      "morph_kernel": 5,
+      "otsu_blur_kernel": 0,
+      "otsu_threshold_adjustment": 0,
+      "rembg_fallback": false,
+      "seg_conf_thresh": 0.55,
+      "segment": "otsu",
+      "shadow_sat_max": 0.35,
+      "strip_shadow": true
+    }
+  },
+  "otsu_override_grabcut": {
+    "key": "58232037bce26e18a9f5b7c67ffb1039",
+    "key_bg": "aec31b8b511d115bd282d69602e0a2bd",
+    "signature": {
+      "bg_tolerance": 12.0,
+      "ghost_blend": 1.0,
+      "grabcut_iters": 5,
+      "grabcut_min_object_area": 0.0,
+      "grabcut_rect_margin": 0.06,
+      "morph_kernel": 5,
+      "rembg_fallback": false,
+      "seg_conf_thresh": 0.55,
+      "segment": "grabcut",
+      "shadow_sat_max": 0.35,
+      "strip_shadow": false
+    }
+  },
+  "otsu_with_fallback": {
+    "key": "f50e5d22ab2dec3ca2967dc5c51deaaf",
+    "key_bg": "8d12de06d2c51781a195d846acffd161",
+    "signature": {
+      "bg_tolerance": 28.0,
+      "ghost_blend": 1.0,
+      "morph_kernel": 5,
+      "otsu_blur_kernel": 0,
+      "otsu_threshold_adjustment": 0,
+      "rembg_device": "cpu",
+      "rembg_fallback": true,
+      "seg_conf_thresh": 0.55,
+      "segment": "otsu",
+      "shadow_sat_max": 0.35,
+      "strip_shadow": true
+    }
+  },
+  "rembg": {
+    "key": "0ec2bb5b5878fb4bc4e6dc232927be9c",
+    "key_bg": "d4dafe101e44c5e3b561d3e150e08210",
+    "signature": {
+      "bg_tolerance": 28.0,
+      "ghost_blend": 1.0,
+      "rembg_device": "cpu",
+      "rembg_fallback": false,
+      "seg_conf_thresh": 0.55,
+      "segment": "rembg",
+      "shadow_sat_max": 0.35,
+      "strip_shadow": true
+    }
+  },
+  "sam": {
+    "key": "7aceb7616e04455c252170a76e86e83d",
+    "key_bg": "1b32485fac0d44db4c32b7bad8c77925",
+    "signature": {
+      "bg_tolerance": 28.0,
+      "ghost_blend": 1.0,
+      "rembg_device": "cpu",
+      "rembg_fallback": false,
+      "sam": {
+        "checkpoint": "models/sam.pth",
+        "model_type": "vit_b",
+        "points_per_side": 32,
+        "pred_iou_thresh": 0.88,
+        "prompt_type": "automatic",
+        "stability_score_thresh": 0.95
+      },
+      "seg_conf_thresh": 0.55,
+      "segment": "sam",
+      "shadow_sat_max": 0.35,
+      "strip_shadow": true
+    }
+  },
+  "threshold": {
+    "key": "d5428f01da47c12ed5209116988db8f7",
+    "key_bg": "05d1d38c9e0714e5c982c49936d258d6",
+    "signature": {
+      "bg_tolerance": 28.0,
+      "ghost_blend": 1.0,
+      "morph_kernel": 5,
+      "rembg_fallback": false,
+      "seg_conf_thresh": 0.55,
+      "segment": "threshold",
+      "shadow_sat_max": 0.35,
+      "strip_shadow": true
+    }
+  }
+}

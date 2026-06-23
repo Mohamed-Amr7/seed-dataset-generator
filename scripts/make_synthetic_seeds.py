@@ -15,7 +15,9 @@ Regimes (one subfolder each so they double as --class-mode subfolders classes):
 Deterministic given --seed. Usage:
   python tests/make_synthetic_seeds.py --out /tmp/synth_seeds --per-class 6
 """
+
 from __future__ import annotations
+
 import argparse
 from pathlib import Path
 
@@ -28,7 +30,7 @@ def _vignette(img: np.ndarray, strength: float = 0.45) -> np.ndarray:
     yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
     cy, cx = h / 2.0, w / 2.0
     r = np.sqrt(((xx - cx) / cx) ** 2 + ((yy - cy) / cy) ** 2)
-    fall = np.clip(1.0 - strength * (r ** 2), 0.3, 1.0)[..., None]
+    fall = np.clip(1.0 - strength * (r**2), 0.3, 1.0)[..., None]
     return np.clip(img.astype(np.float32) * fall, 0, 255).astype(np.uint8)
 
 
@@ -42,8 +44,16 @@ def _ribbed_seed(canvas, cx, cy, ax, ay, base_bgr, rng, ribs=7):
     # ribs: darker stripes along the long axis
     for i in range(ribs):
         off = int((i - ribs / 2) * (2 * ay / ribs))
-        cv2.ellipse(tex, (cx, cy + off), (ax, max(1, ay // (ribs + 2))), 0, 0, 360,
-                    tuple(float(c) * 0.55 for c in base_bgr), -1)
+        cv2.ellipse(
+            tex,
+            (cx, cy + off),
+            (ax, max(1, ay // (ribs + 2))),
+            0,
+            0,
+            360,
+            tuple(float(c) * 0.55 for c in base_bgr),
+            -1,
+        )
     tex += rng.normal(0, 10, tex.shape).astype(np.float32)
     m = (mask > 0)[..., None]
     return np.where(m, np.clip(tex, 0, 255).astype(np.uint8), canvas), mask
@@ -96,10 +106,26 @@ def make_typeB(rng) -> np.ndarray:
         p1 = (p0[0] + int(rng.integers(-60, 60)), p0[1] + int(rng.integers(-60, 60)))
         cv2.line(img, p0, p1, (150, 155, 155), 1, cv2.LINE_AA)
     # burned-in phone watermark (dark text -> far from light bg, must not be a seed)
-    cv2.putText(img, "REDMI 13C 5G", (12, h - 16),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (60, 60, 60), 2, cv2.LINE_AA)
-    cv2.putText(img, "13/08/2025 22:13", (w - 230, h - 16),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (60, 60, 60), 2, cv2.LINE_AA)
+    cv2.putText(
+        img,
+        "REDMI 13C 5G",
+        (12, h - 16),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.7,
+        (60, 60, 60),
+        2,
+        cv2.LINE_AA,
+    )
+    cv2.putText(
+        img,
+        "13/08/2025 22:13",
+        (w - 230, h - 16),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.6,
+        (60, 60, 60),
+        2,
+        cv2.LINE_AA,
+    )
     return img
 
 
@@ -133,8 +159,7 @@ def make_faint(rng) -> np.ndarray:
     return np.where(m, seed, bg)
 
 
-MAKERS = {"typeA": make_typeA, "typeB": make_typeB,
-          "pale": make_pale, "faint": make_faint}
+MAKERS = {"typeA": make_typeA, "typeB": make_typeB, "pale": make_pale, "faint": make_faint}
 
 
 def main():
@@ -149,11 +174,9 @@ def main():
         d.mkdir(parents=True, exist_ok=True)
         for i in range(a.per_class):
             img = fn(rng)
-            cv2.imwrite(str(d / f"{name}_{i:03d}.jpg"), img,
-                        [cv2.IMWRITE_JPEG_QUALITY, 92])
+            cv2.imwrite(str(d / f"{name}_{i:03d}.jpg"), img, [cv2.IMWRITE_JPEG_QUALITY, 92])
     total = a.per_class * len(MAKERS)
-    print(f"wrote {total} synthetic seeds to {a.out} "
-          f"({len(MAKERS)} classes: {list(MAKERS)})")
+    print(f"wrote {total} synthetic seeds to {a.out} ({len(MAKERS)} classes: {list(MAKERS)})")
 
 
 if __name__ == "__main__":

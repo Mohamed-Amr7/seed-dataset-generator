@@ -21,6 +21,7 @@ See the package modules for the code:
     multiseedgen/cliconfig.py      argparse + --config loading
     multiseedgen/models.py         Config / Seed / SegResult dataclasses
 """
+
 from __future__ import annotations
 
 from multiseedgen import (  # noqa: F401  (re-exported for backwards compat)
@@ -34,4 +35,6 @@ from multiseedgen import (  # noqa: F401  (re-exported for backwards compat)
 )
 
 if __name__ == "__main__":
-    run(parse_args())
+    from multiseedgen.__main__ import main  # same entry point: logging + error handling
+
+    main()

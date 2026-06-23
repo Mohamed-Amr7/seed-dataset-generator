@@ -1,4 +1,4 @@
-# Root — clean, large, 27 species. See RECOMMENDED_SETTINGS.md.
+# Root — clean, large, 27 species. See docs/RECOMMENDED_SETTINGS.md.
 config:
   sources: seeds/Root
   out: datasets/root

@@ -14,7 +14,9 @@ Checks, per split present (train/val):
 Exit code 0 = all PASS, 1 = any FAIL. Usage:
   python tests/validate_dataset.py /tmp/out [--seg]
 """
+
 from __future__ import annotations
+
 import json
 import sys
 from pathlib import Path
@@ -34,8 +36,7 @@ def validate(root: Path, seg: bool = False) -> bool:
         lbl_dir = root / split / "labels"
         if not img_dir.exists():
             continue
-        imgs = sorted(p for p in img_dir.iterdir()
-                      if p.suffix.lower() in (".jpg", ".jpeg", ".png"))
+        imgs = sorted(p for p in img_dir.iterdir() if p.suffix.lower() in (".jpg", ".jpeg", ".png"))
         yolo_box_lines = 0
         if lbl_dir.exists():
             # one .txt per image
@@ -62,15 +63,22 @@ def validate(root: Path, seg: bool = False) -> bool:
                         if not (0 < cx <= 1 and 0 < cy <= 1 and 0 < bw <= 1 and 0 < bh <= 1):
                             ok = False
                             _fail(msgs, f"{lp.name}:{ln} box not in (0,1]: {vals}")
-                        if cx - bw / 2 < -1e-6 or cx + bw / 2 > 1 + 1e-6 or \
-                           cy - bh / 2 < -1e-6 or cy + bh / 2 > 1 + 1e-6:
+                        if (
+                            cx - bw / 2 < -1e-6
+                            or cx + bw / 2 > 1 + 1e-6
+                            or cy - bh / 2 < -1e-6
+                            or cy + bh / 2 > 1 + 1e-6
+                        ):
                             ok = False
                             _fail(msgs, f"{lp.name}:{ln} box out of frame: {vals}")
                     else:  # polygon (yolo-seg)
                         if not seg:
                             ok = False
-                            _fail(msgs, f"{lp.name}:{ln} unexpected polygon line "
-                                        f"({len(vals)} vals); pass --seg if expected")
+                            _fail(
+                                msgs,
+                                f"{lp.name}:{ln} unexpected polygon line "
+                                f"({len(vals)} vals); pass --seg if expected",
+                            )
                         if len(vals) < 6 or len(vals) % 2 != 0:
                             ok = False
                             _fail(msgs, f"{lp.name}:{ln} bad polygon length {len(vals)}")
@@ -105,7 +113,10 @@ def validate(root: Path, seg: bool = False) -> bool:
                 W, H = img_wh.get(a["image_id"], (10**9, 10**9))
                 if x < 0 or y < 0 or x + w > W or y + h > H or w <= 0 or h <= 0:
                     ok = False
-                    _fail(msgs, f"{coco_path.name} ann {a['id']} bbox out of frame {a['bbox']} (img {W}x{H})")
+                    _fail(
+                        msgs,
+                        f"{coco_path.name} ann {a['id']} bbox out of frame {a['bbox']} (img {W}x{H})",
+                    )
                 if a.get("area", 0) <= 0:
                     ok = False
                     _fail(msgs, f"{coco_path.name} ann {a['id']} area<=0")
@@ -117,7 +128,6 @@ def validate(root: Path, seg: bool = False) -> bool:
                     else:
                         poly = np.array(s[0]).reshape(-1, 2)
                         bx0, by0 = poly[:, 0].min(), poly[:, 1].min()
-                        bx1, by1 = poly[:, 0].max(), poly[:, 1].max()
                         # bbox should ~equal polygon bounding rect (largest piece)
                         if abs(bx0 - x) > 2 or abs(by0 - y) > 2:
                             # allow: multi-piece COCO keeps all pieces -> bbox may be union.
@@ -126,8 +136,9 @@ def validate(root: Path, seg: bool = False) -> bool:
         if coco_anns is not None and lbl_dir.exists():
             if yolo_box_lines != coco_anns:
                 ok = False
-                _fail(msgs, f"{split}: YOLO box lines ({yolo_box_lines}) != "
-                            f"COCO anns ({coco_anns})")
+                _fail(
+                    msgs, f"{split}: YOLO box lines ({yolo_box_lines}) != COCO anns ({coco_anns})"
+                )
             else:
                 msgs.append(f"OK  {split}: {yolo_box_lines} YOLO boxes == {coco_anns} COCO anns")
         elif lbl_dir.exists():

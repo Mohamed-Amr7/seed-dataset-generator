@@ -1,0 +1,1060 @@
+{
+  "groups": [
+    {
+      "fields": [
+        {
+          "choices": null,
+          "default": null,
+          "flag": "--sources",
+          "help": "folder of single-seed images (required unless in --config)",
+          "name": "sources",
+          "path_kind": "dir",
+          "widget": "text"
+        },
+        {
+          "choices": null,
+          "default": null,
+          "flag": "--out",
+          "help": "output dataset folder (required unless in --config)",
+          "name": "out",
+          "path_kind": "dir",
+          "widget": "text"
+        },
+        {
+          "choices": null,
+          "default": 1000,
+          "flag": "--num-images",
+          "help": "",
+          "name": "num_images",
+          "path_kind": null,
+          "widget": "int"
+        },
+        {
+          "choices": null,
+          "default": 640,
+          "flag": "--img-size",
+          "help": "square canvas size",
+          "name": "img_size",
+          "path_kind": null,
+          "widget": "int"
+        },
+        {
+          "choices": [
+            "jpg",
+            "png"
+          ],
+          "default": "jpg",
+          "flag": "--img-ext",
+          "help": "",
+          "name": "img_ext",
+          "path_kind": null,
+          "widget": "choice"
+        },
+        {
+          "choices": null,
+          "default": 0.15,
+          "flag": "--val-split",
+          "help": "",
+          "name": "val_split",
+          "path_kind": null,
+          "widget": "float"
+        },
+        {
+          "choices": [
+            "yolo",
+            "coco",
+            "both",
+            "yolo-seg"
+          ],
+          "default": "yolo",
+          "flag": "--format",
+          "help": "",
+          "name": "fmt",
+          "path_kind": null,
+          "widget": "choice"
+        },
+        {
+          "choices": null,
+          "default": false,
+          "flag": "--masks",
+          "help": "compute per-seed visible polygons (auto-on for yolo-seg)",
+          "name": "masks",
+          "path_kind": null,
+          "widget": "bool"
+        },
+        {
+          "choices": [
+            "single",
+            "subfolders"
+          ],
+          "default": "single",
+          "flag": "--class-mode",
+          "help": "'subfolders' = one class per source subdirectory",
+          "name": "class_mode",
+          "path_kind": null,
+          "widget": "choice"
+        },
+        {
+          "choices": null,
+          "default": 0,
+          "flag": "--visualize-count",
+          "help": "save N annotated previews from the exported labels",
+          "name": "visualize_count",
+          "path_kind": null,
+          "widget": "int"
+        },
+        {
+          "choices": null,
+          "default": 0,
+          "flag": "--check-seeds",
+          "help": "dump N segmented cut-outs on a checkerboard to verify segmentation; use with --num-images 0 for a quick check",
+          "name": "check_seeds",
+          "path_kind": null,
+          "widget": "int"
+        },
+        {
+          "choices": null,
+          "default": false,
+          "flag": "--provenance",
+          "help": "emit provenance_<split>.jsonl mapping boxes to source seeds",
+          "name": "provenance",
+          "path_kind": null,
+          "widget": "bool"
+        },
+        {
+          "choices": null,
+          "default": false,
+          "flag": "--qa-report",
+          "help": "write a dataset QA report (qa/report.md + charts)",
+          "name": "qa_report",
+          "path_kind": null,
+          "widget": "bool"
+        },
+        {
+          "choices": null,
+          "default": 12,
+          "flag": "--qa-montage",
+          "help": "composites in the QA montage grid",
+          "name": "qa_montage",
+          "path_kind": null,
+          "widget": "int"
+        },
+        {
+          "choices": null,
+          "default": 0,
+          "flag": "--seed",
+          "help": "",
+          "name": "seed",
+          "path_kind": null,
+          "widget": "int"
+        }
+      ],
+      "title": "I/O"
+    },
+    {
+      "fields": [
+        {
+          "choices": null,
+          "default": 6,
+          "flag": "--min-seeds",
+          "help": "",
+          "name": "min_seeds",
+          "path_kind": null,
+          "widget": "int"
+        },
+        {
+          "choices": null,
+          "default": 25,
+          "flag": "--max-seeds",
+          "help": "",
+          "name": "max_seeds",
+          "path_kind": null,
+          "widget": "int"
+        },
+        {
+          "choices": null,
+          "default": 0.06,
+          "flag": "--scale-min",
+          "help": "min seed long-side as fraction of canvas",
+          "name": "scale_min",
+          "path_kind": null,
+          "widget": "float"
+        },
+        {
+          "choices": null,
+          "default": 0.18,
+          "flag": "--scale-max",
+          "help": "",
+          "name": "scale_max",
+          "path_kind": null,
+          "widget": "float"
+        },
+        {
+          "choices": [
+            "allow",
+            "limit"
+          ],
+          "default": "allow",
+          "flag": "--overlap-mode",
+          "help": "",
+          "name": "overlap_mode",
+          "path_kind": null,
+          "widget": "choice"
+        },
+        {
+          "choices": null,
+          "default": 0.6,
+          "flag": "--max-iou",
+          "help": "max box IoU when --overlap-mode limit",
+          "name": "max_iou",
+          "path_kind": null,
+          "widget": "float"
+        },
+        {
+          "choices": null,
+          "default": 0.4,
+          "flag": "--min-visibility",
+          "help": "fraction of a seed that must be on-canvas to keep it",
+          "name": "min_visibility",
+          "path_kind": null,
+          "widget": "float"
+        },
+        {
+          "choices": null,
+          "default": 0.3,
+          "flag": "--min-visible-occluded",
+          "help": "fraction left unoccluded to keep the label",
+          "name": "min_visible_occluded",
+          "path_kind": null,
+          "widget": "float"
+        },
+        {
+          "choices": null,
+          "default": 8,
+          "flag": "--min-box-px",
+          "help": "",
+          "name": "min_box_px",
+          "path_kind": null,
+          "widget": "int"
+        }
+      ],
+      "title": "scene composition"
+    },
+    {
+      "fields": [
+        {
+          "choices": null,
+          "default": 180.0,
+          "flag": "--max-rotation",
+          "help": "",
+          "name": "max_rotation",
+          "path_kind": null,
+          "widget": "float"
+        },
+        {
+          "choices": null,
+          "default": 0.0,
+          "flag": "--aug-shear",
+          "help": "max per-seed shear in degrees (0 = off); applied pre-label on the cut-out so boxes stay correct",
+          "name": "aug_shear",
+          "path_kind": null,
+          "widget": "float"
+        },
+        {
+          "choices": null,
+          "default": true,
+          "flag": "--no-flip",
+          "help": "",
+          "name": "flip",
+          "path_kind": null,
+          "widget": "bool"
+        },
+        {
+          "choices": null,
+          "default": 5.0,
+          "flag": "--jitter-hue",
+          "help": "",
+          "name": "jitter_hue",
+          "path_kind": null,
+          "widget": "float"
+        },
+        {
+          "choices": null,
+          "default": 0.15,
+          "flag": "--jitter-sat",
+          "help": "",
+          "name": "jitter_sat",
+          "path_kind": null,
+          "widget": "float"
+        },
+        {
+          "choices": null,
+          "default": 0.15,
+          "flag": "--jitter-val",
+          "help": "",
+          "name": "jitter_val",
+          "path_kind": null,
+          "widget": "float"
+        },
+        {
+          "choices": null,
+          "default": 0.5,
+          "flag": "--edge-feather",
+          "help": "",
+          "name": "edge_feather",
+          "path_kind": null,
+          "widget": "float"
+        }
+      ],
+      "title": "per-seed augmentation"
+    },
+    {
+      "fields": [
+        {
+          "choices": null,
+          "default": true,
+          "flag": "--no-shadow",
+          "help": "",
+          "name": "shadow",
+          "path_kind": null,
+          "widget": "bool"
+        },
+        {
+          "choices": null,
+          "default": 0.25,
+          "flag": "--shadow-opacity",
+          "help": "",
+          "name": "shadow_opacity",
+          "path_kind": null,
+          "widget": "float"
+        },
+        {
+          "choices": null,
+          "default": 9.0,
+          "flag": "--shadow-blur",
+          "help": "",
+          "name": "shadow_blur",
+          "path_kind": null,
+          "widget": "float"
+        },
+        {
+          "choices": null,
+          "default": 4,
+          "flag": "--shadow-offset",
+          "help": "",
+          "name": "shadow_offset",
+          "path_kind": null,
+          "widget": "int"
+        },
+        {
+          "choices": [
+            "fixed",
+            "scene"
+          ],
+          "default": "scene",
+          "flag": "--shadow-dir-mode",
+          "help": "'scene' = one random light direction per scene (recommended for realism)",
+          "name": "shadow_dir_mode",
+          "path_kind": null,
+          "widget": "choice"
+        }
+      ],
+      "title": "drop shadow"
+    },
+    {
+      "fields": [
+        {
+          "choices": [
+            "solid",
+            "gradient",
+            "noise",
+            "seedbed",
+            "texture"
+          ],
+          "default": [
+            "solid",
+            "gradient",
+            "noise"
+          ],
+          "flag": "--backgrounds",
+          "help": "synthetic background types when no --textures given ('seedbed' is discouraged: unlabelled seed clutter)",
+          "name": "backgrounds",
+          "path_kind": null,
+          "widget": "choice"
+        },
+        {
+          "choices": null,
+          "default": null,
+          "flag": "--textures",
+          "help": "folder of REAL background photos (strongly preferred); used for ~70%% of scenes when provided",
+          "name": "textures",
+          "path_kind": "dir",
+          "widget": "text"
+        },
+        {
+          "choices": null,
+          "default": false,
+          "flag": "--bg-from-sources",
+          "help": "build backgrounds by inpainting the seed out of your source images (recovers your real surface, e.g. the empty tray); combine with --neg-frac for realistic background-only negatives",
+          "name": "bg_from_sources",
+          "path_kind": null,
+          "widget": "bool"
+        },
+        {
+          "choices": null,
+          "default": 1.0,
+          "flag": "--ghost-blend",
+          "help": "strength (0..1) of the smooth low-frequency tray model used to erase the inpaint ghost in bg extraction",
+          "name": "ghost_blend",
+          "path_kind": null,
+          "widget": "float"
+        },
+        {
+          "choices": null,
+          "default": 0.0,
+          "flag": "--neg-frac",
+          "help": "fraction of background-only images with no seeds (e.g. 0.1-0.15) to suppress background false positives",
+          "name": "neg_frac",
+          "path_kind": null,
+          "widget": "float"
+        }
+      ],
+      "title": "backgrounds"
+    },
+    {
+      "fields": [
+        {
+          "choices": [
+            "auto",
+            "alpha",
+            "threshold",
+            "otsu",
+            "grabcut",
+            "rembg",
+            "sam"
+          ],
+          "default": "auto",
+          "flag": "--segment",
+          "help": "",
+          "name": "segment",
+          "path_kind": null,
+          "widget": "choice"
+        },
+        {
+          "choices": null,
+          "default": 28.0,
+          "flag": "--bg-tolerance",
+          "help": "color distance from border treated as background",
+          "name": "bg_tolerance",
+          "path_kind": null,
+          "widget": "float"
+        },
+        {
+          "choices": null,
+          "default": 0.55,
+          "flag": "--seg-conf-thresh",
+          "help": "cut-outs below this confidence are routed to rembg / skipped",
+          "name": "seg_conf_thresh",
+          "path_kind": null,
+          "widget": "float"
+        },
+        {
+          "choices": null,
+          "default": true,
+          "flag": "--no-rembg-fallback",
+          "help": "disable the automatic rembg fallback for hard sources",
+          "name": "rembg_fallback",
+          "path_kind": null,
+          "widget": "bool"
+        },
+        {
+          "choices": [
+            "auto",
+            "cuda",
+            "cpu"
+          ],
+          "default": "auto",
+          "flag": "--rembg-provider",
+          "help": "onnxruntime execution provider for rembg (auto = GPU if available, else CPU)",
+          "name": "rembg_provider",
+          "path_kind": null,
+          "widget": "choice"
+        },
+        {
+          "choices": null,
+          "default": true,
+          "flag": "--no-strip-shadow",
+          "help": "disable dark cast-shadow removal in auto segmentation",
+          "name": "strip_shadow",
+          "path_kind": null,
+          "widget": "bool"
+        },
+        {
+          "choices": null,
+          "default": 0.35,
+          "flag": "--shadow-sat-max",
+          "help": "max saturation a pixel can have to count as cast shadow",
+          "name": "shadow_sat_max",
+          "path_kind": null,
+          "widget": "float"
+        },
+        {
+          "choices": null,
+          "default": null,
+          "flag": "--cache-dir",
+          "help": "cut-out cache directory (default: <out>/.seg_cache)",
+          "name": "cache_dir",
+          "path_kind": "dir",
+          "widget": "text"
+        },
+        {
+          "choices": null,
+          "default": true,
+          "flag": "--no-cache",
+          "help": "do not read or write the cut-out cache",
+          "name": "use_cache",
+          "path_kind": null,
+          "widget": "bool"
+        },
+        {
+          "choices": null,
+          "default": false,
+          "flag": "--refresh-cache",
+          "help": "recompute and overwrite cached cut-outs",
+          "name": "refresh_cache",
+          "path_kind": null,
+          "widget": "bool"
+        },
+        {
+          "choices": null,
+          "default": null,
+          "flag": "--segment-map",
+          "help": "JSON/CSV manifest of per-source segmentation overrides",
+          "name": "segment_map",
+          "path_kind": "file",
+          "widget": "text"
+        },
+        {
+          "choices": null,
+          "default": 5,
+          "flag": "--morph-kernel",
+          "help": "ellipse kernel px for classical mask cleanup (config: segmentation.grabcut.morph_kernel)",
+          "name": "morph_kernel",
+          "path_kind": null,
+          "widget": "int"
+        },
+        {
+          "choices": null,
+          "default": 5,
+          "flag": "--grabcut-iters",
+          "help": "grabcut: GrabCut iterations (segmentation.grabcut.iterations)",
+          "name": "grabcut_iters",
+          "path_kind": null,
+          "widget": "int"
+        },
+        {
+          "choices": null,
+          "default": 0.06,
+          "flag": "--grabcut-rect-margin",
+          "help": "grabcut: init-rect inset as fraction of min(h,w)",
+          "name": "grabcut_rect_margin",
+          "path_kind": null,
+          "widget": "float"
+        },
+        {
+          "choices": null,
+          "default": 0.0,
+          "flag": "--grabcut-min-object-area",
+          "help": "grabcut: drop masks whose area is below this frame fraction",
+          "name": "grabcut_min_object_area",
+          "path_kind": null,
+          "widget": "float"
+        },
+        {
+          "choices": null,
+          "default": 0,
+          "flag": "--otsu-blur-kernel",
+          "help": "otsu: pre-threshold gaussian blur kernel px (0 = off)",
+          "name": "otsu_blur_kernel",
+          "path_kind": null,
+          "widget": "int"
+        },
+        {
+          "choices": null,
+          "default": 0,
+          "flag": "--otsu-threshold-adjustment",
+          "help": "otsu: signed offset added to the computed Otsu threshold",
+          "name": "otsu_threshold_adjustment",
+          "path_kind": null,
+          "widget": "int"
+        },
+        {
+          "choices": null,
+          "default": null,
+          "flag": "--rembg-model",
+          "help": "u2net: rembg model name (default = rembg's u2net)",
+          "name": "rembg_model",
+          "path_kind": null,
+          "widget": "text"
+        },
+        {
+          "choices": null,
+          "default": null,
+          "flag": "--sam-checkpoint",
+          "help": "path to a SAM checkpoint (enables --segment sam; optional)",
+          "name": "sam_checkpoint",
+          "path_kind": "file",
+          "widget": "text"
+        },
+        {
+          "choices": [
+            "vit_h",
+            "vit_l",
+            "vit_b"
+          ],
+          "default": "vit_b",
+          "flag": "--sam-model-type",
+          "help": "sam: backbone (vit_b ~358MB fits a 6GB GPU; vit_h ~2.4GB)",
+          "name": "sam_model_type",
+          "path_kind": null,
+          "widget": "choice"
+        },
+        {
+          "choices": [
+            "automatic",
+            "box",
+            "points"
+          ],
+          "default": "automatic",
+          "flag": "--sam-prompt-type",
+          "help": "sam: prompt mode for the single-seed crop",
+          "name": "sam_prompt_type",
+          "path_kind": null,
+          "widget": "choice"
+        },
+        {
+          "choices": null,
+          "default": 32,
+          "flag": "--sam-points-per-side",
+          "help": "sam(automatic): mask-generator grid density",
+          "name": "sam_points_per_side",
+          "path_kind": null,
+          "widget": "int"
+        },
+        {
+          "choices": null,
+          "default": 0.88,
+          "flag": "--sam-pred-iou-thresh",
+          "help": "sam(automatic): predicted-IoU quality filter",
+          "name": "sam_pred_iou_thresh",
+          "path_kind": null,
+          "widget": "float"
+        },
+        {
+          "choices": null,
+          "default": 0.95,
+          "flag": "--sam-stability-score-thresh",
+          "help": "sam(automatic): stability-score quality filter",
+          "name": "sam_stability_score_thresh",
+          "path_kind": null,
+          "widget": "float"
+        },
+        {
+          "choices": null,
+          "default": -1,
+          "flag": "--jobs",
+          "help": "segmentation worker processes; -1 = all cores, 1 = serial",
+          "name": "jobs",
+          "path_kind": null,
+          "widget": "int"
+        },
+        {
+          "choices": null,
+          "default": 4,
+          "flag": "--gpu-seg-jobs",
+          "help": "max concurrent GPU rembg sessions when --rembg-provider resolves to CUDA (bounds VRAM; default 4 ~= 3.7GB on a 6GB card)",
+          "name": "gpu_seg_jobs",
+          "path_kind": null,
+          "widget": "int"
+        },
+        {
+          "choices": null,
+          "default": 0,
+          "flag": "--max-sources",
+          "help": "0 = use all",
+          "name": "max_sources",
+          "path_kind": null,
+          "widget": "int"
+        },
+        {
+          "choices": null,
+          "default": 0,
+          "flag": "--max-seed-px",
+          "help": "OPT-IN: cap each stored seed patch's long side (px) to bound the in-RAM seed pool (0 = off). Resamples oversized seeds -> changes rendered pixels (memory/quality tradeoff); keep well above ceil(scale_max*img_size) for near-lossless output",
+          "name": "max_seed_px",
+          "path_kind": null,
+          "widget": "int"
+        }
+      ],
+      "title": "segmentation"
+    },
+    {
+      "fields": [
+        {
+          "choices": [
+            "alpha",
+            "seamless"
+          ],
+          "default": "alpha",
+          "flag": "--blend",
+          "help": "paste blend mode; 'alpha' (default) is the recommended path",
+          "name": "blend",
+          "path_kind": null,
+          "widget": "choice"
+        },
+        {
+          "choices": null,
+          "default": false,
+          "flag": "--degrade",
+          "help": "apply camera-matched degradation to the final composite",
+          "name": "degrade",
+          "path_kind": null,
+          "widget": "bool"
+        },
+        {
+          "choices": null,
+          "default": 0.0,
+          "flag": "--noise-sigma",
+          "help": "gaussian sensor-noise stddev on the composite (needs --degrade)",
+          "name": "noise_sigma",
+          "path_kind": null,
+          "widget": "float"
+        },
+        {
+          "choices": null,
+          "default": false,
+          "flag": "--poisson-noise",
+          "help": "add shot (Poisson) noise (needs --degrade)",
+          "name": "poisson_noise",
+          "path_kind": null,
+          "widget": "bool"
+        },
+        {
+          "choices": null,
+          "default": 95,
+          "flag": "--jpeg-quality-min",
+          "help": "",
+          "name": "jpeg_quality_min",
+          "path_kind": null,
+          "widget": "int"
+        },
+        {
+          "choices": null,
+          "default": 95,
+          "flag": "--jpeg-quality-max",
+          "help": "",
+          "name": "jpeg_quality_max",
+          "path_kind": null,
+          "widget": "int"
+        },
+        {
+          "choices": null,
+          "default": 0.0,
+          "flag": "--aug-gamma",
+          "help": "max random gamma jitter on the composite (needs --degrade); draws uniform(1-g, 1+g). Simulates lighting shift",
+          "name": "aug_gamma",
+          "path_kind": null,
+          "widget": "float"
+        },
+        {
+          "choices": null,
+          "default": 0.0,
+          "flag": "--blur-max-sigma",
+          "help": "max defocus gaussian sigma (needs --degrade)",
+          "name": "blur_max_sigma",
+          "path_kind": null,
+          "widget": "float"
+        },
+        {
+          "choices": null,
+          "default": 0,
+          "flag": "--motion-blur-max",
+          "help": "max motion-blur kernel length px (needs --degrade)",
+          "name": "motion_blur_max",
+          "path_kind": null,
+          "widget": "int"
+        },
+        {
+          "choices": null,
+          "default": 0.0,
+          "flag": "--vignette",
+          "help": "synthetic vignette strength on the composite (needs --degrade)",
+          "name": "vignette",
+          "path_kind": null,
+          "widget": "float"
+        },
+        {
+          "choices": null,
+          "default": 0.0,
+          "flag": "--perspective",
+          "help": "max corner jitter as fraction of canvas; OFF by default. Applied pre-label with boxes transformed",
+          "name": "perspective",
+          "path_kind": null,
+          "widget": "float"
+        }
+      ],
+      "title": "realism"
+    },
+    {
+      "fields": [
+        {
+          "choices": null,
+          "default": 0,
+          "flag": "--workers",
+          "help": "scene-generation workers; 0 = auto(min(cpu,8)), 1 = serial (deterministic reference path)",
+          "name": "workers",
+          "path_kind": null,
+          "widget": "int"
+        },
+        {
+          "choices": [
+            "auto",
+            "loky",
+            "threading"
+          ],
+          "default": "auto",
+          "flag": "--parallel-backend",
+          "help": "'loky' = separate processes (fastest, but each holds a full copy of the seed/texture assets in RAM); 'threading' = shared memory (~1x RAM, still multi-core via cv2/numpy). 'auto' uses loky only when the copies fit in free RAM, else threading.",
+          "name": "parallel_backend",
+          "path_kind": null,
+          "widget": "choice"
+        }
+      ],
+      "title": "performance"
+    },
+    {
+      "fields": [
+        {
+          "choices": null,
+          "default": 0.0,
+          "flag": "--val-seed-holdout",
+          "help": "fraction of SOURCE seeds reserved for val only (prevents data leakage: a held-out seed never appears in train). 0 = legacy behaviour (both splits share every seed)",
+          "name": "val_seed_holdout",
+          "path_kind": null,
+          "widget": "float"
+        },
+        {
+          "choices": null,
+          "default": null,
+          "flag": "--val-seeds",
+          "help": "globs of source files reserved for val (e.g. '*_holdout*'); overrides --val-seed-holdout when given",
+          "name": "val_seeds",
+          "path_kind": null,
+          "widget": "text"
+        }
+      ],
+      "title": "data split"
+    },
+    {
+      "fields": [
+        {
+          "choices": null,
+          "default": false,
+          "flag": "--class-balanced",
+          "help": "sample a class uniformly first, then a seed within it (counters source-count imbalance across classes)",
+          "name": "class_balanced",
+          "path_kind": null,
+          "widget": "bool"
+        },
+        {
+          "choices": null,
+          "default": null,
+          "flag": "--class-probs",
+          "help": "explicit per-class sampling weights, in class-id order (implies --class-balanced)",
+          "name": "class_probs",
+          "path_kind": null,
+          "widget": "float"
+        }
+      ],
+      "title": "sampling"
+    },
+    {
+      "fields": [
+        {
+          "choices": null,
+          "default": false,
+          "flag": "--extra-annotations",
+          "help": "add per-annotation seed source/dims/scale/method to COCO",
+          "name": "extra_annotations",
+          "path_kind": null,
+          "widget": "bool"
+        },
+        {
+          "choices": null,
+          "default": false,
+          "flag": "--multilabel-csv",
+          "help": "write multilabel.csv (one row/image, per-class counts) alongside the dataset",
+          "name": "multilabel_csv",
+          "path_kind": null,
+          "widget": "bool"
+        }
+      ],
+      "title": "export"
+    }
+  ],
+  "presets": {
+    "Recommended (general)": {
+      "bg_from_sources": true,
+      "blur_max_sigma": 0.5,
+      "degrade": true,
+      "edge_feather": 0.5,
+      "fmt": "both",
+      "jpeg_quality_max": 95,
+      "jpeg_quality_min": 80,
+      "masks": true,
+      "max_seeds": 30,
+      "min_seeds": 8,
+      "neg_frac": 0.1,
+      "noise_sigma": 3.0,
+      "parallel_backend": "auto",
+      "qa_report": true,
+      "rembg_provider": "auto",
+      "scale_max": 0.16,
+      "scale_min": 0.05,
+      "seed": 7,
+      "segment": "auto",
+      "shadow_dir_mode": "scene",
+      "shadow_opacity": 0.25,
+      "visualize_count": 12,
+      "workers": 0
+    },
+    "Root \u2014 clean, 27 species": {
+      "bg_from_sources": true,
+      "blur_max_sigma": 0.5,
+      "class_mode": "subfolders",
+      "degrade": true,
+      "fmt": "both",
+      "img_size": 640,
+      "jpeg_quality_max": 95,
+      "jpeg_quality_min": 80,
+      "masks": true,
+      "max_seeds": 30,
+      "min_seeds": 8,
+      "neg_frac": 0.1,
+      "noise_sigma": 3,
+      "num_images": 6000,
+      "out": "datasets/root",
+      "qa_report": true,
+      "rembg_provider": "auto",
+      "scale_max": 0.16,
+      "scale_min": 0.05,
+      "seed": 7,
+      "segment": "auto",
+      "shadow_dir_mode": "scene",
+      "sources": "seeds/Root",
+      "visualize_count": 12
+    },
+    "Soybean \u2014 Healthy (single class)": {
+      "bg_from_sources": true,
+      "blur_max_sigma": 0.6,
+      "class_mode": "single",
+      "degrade": true,
+      "fmt": "yolo-seg",
+      "gpu_seg_jobs": 4,
+      "img_size": 640,
+      "jpeg_quality_max": 95,
+      "jpeg_quality_min": 75,
+      "max_seeds": 22,
+      "min_seeds": 6,
+      "neg_frac": 0.12,
+      "noise_sigma": 3,
+      "num_images": 2500,
+      "out": "datasets/soybean_healthy",
+      "qa_report": true,
+      "rembg_provider": "auto",
+      "scale_max": 0.18,
+      "scale_min": 0.06,
+      "seed": 7,
+      "segment": "rembg",
+      "shadow_dir_mode": "scene",
+      "sources": "seeds/Test/images/Healthy",
+      "visualize_count": 12
+    },
+    "Test \u2014 hardest (polygons)": {
+      "bg_from_sources": true,
+      "blur_max_sigma": 0.6,
+      "degrade": true,
+      "fmt": "yolo-seg",
+      "gpu_seg_jobs": 4,
+      "img_size": 640,
+      "jpeg_quality_max": 95,
+      "jpeg_quality_min": 75,
+      "max_seeds": 22,
+      "min_seeds": 6,
+      "neg_frac": 0.12,
+      "noise_sigma": 3,
+      "num_images": 3000,
+      "out": "datasets/test",
+      "qa_report": true,
+      "rembg_provider": "auto",
+      "scale_max": 0.18,
+      "scale_min": 0.06,
+      "seed": 7,
+      "segment": "rembg",
+      "shadow_dir_mode": "scene",
+      "sources": "seeds/Test/images",
+      "visualize_count": 12
+    },
+    "Wheat \u2014 tiny, low-contrast": {
+      "bg_from_sources": true,
+      "class_mode": "subfolders",
+      "degrade": true,
+      "fmt": "both",
+      "img_size": 512,
+      "jpeg_quality_max": 95,
+      "jpeg_quality_min": 80,
+      "masks": true,
+      "max_seeds": 45,
+      "min_box_px": 6,
+      "min_seeds": 12,
+      "neg_frac": 0.1,
+      "noise_sigma": 3,
+      "num_images": 4000,
+      "out": "datasets/wheat",
+      "qa_report": true,
+      "rembg_provider": "auto",
+      "scale_max": 0.09,
+      "scale_min": 0.03,
+      "seed": 7,
+      "seg_conf_thresh": 0.48,
+      "segment": "auto",
+      "shadow_dir_mode": "scene",
+      "sources": "seeds/Varietal purity of wheat seeds dataset"
+    }
+  },
+  "recommended": {
+    "bg_from_sources": true,
+    "blur_max_sigma": 0.5,
+    "degrade": true,
+    "edge_feather": 0.5,
+    "fmt": "both",
+    "jpeg_quality_max": 95,
+    "jpeg_quality_min": 80,
+    "masks": true,
+    "max_seeds": 30,
+    "min_seeds": 8,
+    "neg_frac": 0.1,
+    "noise_sigma": 3.0,
+    "parallel_backend": "auto",
+    "qa_report": true,
+    "rembg_provider": "auto",
+    "scale_max": 0.16,
+    "scale_min": 0.05,
+    "seed": 7,
+    "segment": "auto",
+    "shadow_dir_mode": "scene",
+    "shadow_opacity": 0.25,
+    "visualize_count": 12,
+    "workers": 0
+  }
+}

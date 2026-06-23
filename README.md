@@ -1,80 +1,61 @@
 # MultiSeedGen
 
-Synthetic **multi-seed detection** dataset generator (v3.0.1). Cuts individual
-seeds out of source photos, composites many of them onto realistic backgrounds
-with domain-matched lighting and camera degradation, and exports
-detection/segmentation datasets (YOLO, YOLO-seg, COCO) with full provenance and
-QA reports. Ships with both a CLI and a FastAPI web UI.
+Synthetic **multi-seed detection** dataset generator (v3.0.1). Cuts individual seeds out
+of source photos, composites many of them onto realistic backgrounds with domain-matched
+lighting and camera degradation, and exports detection/segmentation datasets (YOLO,
+YOLO-seg, COCO) with full provenance and QA reports. Ships with both a CLI and a FastAPI
+web UI, and produces **byte-reproducible** output for a fixed `(config, seed)`.
 
 ## Quick start
 
 ```bash
-# Generate a dataset from a config
-python seedgen.py --config configs/soybean_healthy.yaml      # or: python -m multiseedgen --config ...
+pip install -e .                                  # core CLI; add ".[web]" for the UI
 
-# Launch the web UI
-python -m multiseedgen.web                                   # then open the printed URL
+seedgen --config configs/soybean_healthy.yaml     # generate from a recipe
+multiseedgen-web                                  # or launch the web UI
 ```
 
-Outputs (images, annotations, `data.yaml`, provenance, QA charts) are written to
-the config's `out:` directory (e.g. `datasets/soybean_healthy`).
+Outputs (images, annotations, `data.yaml`, provenance, QA charts) are written to the
+config's `out:` directory. `python seedgen.py …` still works as a backward-compat shim.
 
-## GPU / Docker
+## Documentation
 
-Segmentation uses `rembg` and can run on GPU via `onnxruntime-gpu`. See
-[`docker/GPU_SETUP.md`](docker/GPU_SETUP.md), [`docker/Dockerfile.gpu`](docker/Dockerfile.gpu),
-and [`docker/compose.gpu.yaml`](docker/compose.gpu.yaml). Tuning guidance lives in
-[`RECOMMENDED_SETTINGS.md`](RECOMMENDED_SETTINGS.md).
+Full docs live in **[`docs/`](docs/README.md)**:
 
-## Package layout (`multiseedgen/`)
+- **[Installation](docs/installation.md)** — install + optional extras (`web`/`rembg`/`gpu`/`sam`/`dev`).
+- **[Usage](docs/usage.md)** — CLI, web UI, config files, helper scripts.
+- **[Architecture](docs/architecture.md)** — package layout, the determinism contract, fork-safety, error/logging model.
+- **[Configuration tuning](docs/RECOMMENDED_SETTINGS.md)** & **[Augmentation/segmentation guide](docs/AUGMENTATION.md)**.
+- **[Contributing](docs/contributing.md)** — dev setup, the regression gate, test conventions.
+- **[GPU / Docker](docker/GPU_SETUP.md)** — CUDA pins, `onnxruntime-gpu`, GPU SAM.
 
-| Module | Responsibility |
-|--------|----------------|
-| `models.py` | `Config` / `Seed` / `SegResult` dataclasses |
-| `constants.py` | version, `SEG_VERSION` (cache key), shared literals |
-| `optdeps.py` | optional-dependency guards |
-| `segmentation.py` | segmentation cascade + rembg fallback + disk cache |
-| `compositing.py` | transforms, backgrounds, placement, scene assembly |
-| `degrade.py` | camera-matched photometric degradation |
-| `export.py` | YOLO / YOLO-seg / COCO exporters, `data.yaml`, manifest |
-| `qa.py` | QA charts, montages, previews, seed checker |
-| `pipeline.py` | deterministic per-scene workers + `run()` driver |
-| `cliconfig.py` | argparse interface + `--config` loading |
-| `web/` | FastAPI backend (`app.py`) + static UI |
+## Package layout
 
-`seedgen.py` is a backward-compatible shim that re-exports the package API and
-preserves the original `python seedgen.py ...` entry point.
+```
+multiseedgen/
+  config.py errors.py logging_setup.py   validated Config, typed errors, logging
+  models.py constants.py optdeps.py      dataclasses, version/cache key, optional-dep guards
+  cliconfig.py                           argparse + --config loading
+  segmentation/                          segment a seed out of a source (masks/session/cache/loader)
+  compositing/                           transforms / backgrounds / blend / scene assembly
+  degrade.py export.py qa.py             degradation, YOLO/COCO writers, QA charts
+  pipeline.py                            deterministic per-scene workers + run() driver
+  web/                                   FastAPI backend (app/schemas/services) + static UI
+```
+
+See [`docs/architecture.md`](docs/architecture.md) for the annotated tree and data flow.
 
 ## Configs
 
-`configs/` holds ready-to-run dataset definitions: `root.yaml` (multi-class
-spice/seed set), `test.yaml`, `wheat.yaml`, and `soybean_healthy.yaml`. Each sets
-sources, output dir, scene/seed counts, segmentation backend, and export format.
-[`configs/example.yaml`](configs/example.yaml) is a fully-commented reference that
-exercises every option, including the nested per-method segmentation sections.
-
-Config files accept either flat keys or the grouped/nested layout
-(`segmentation:`, `split:`, `sampling:`, `augmentation:`, `export:`); CLI flags
-override file values.
-
-## Segmentation & augmentation guide
-
-[`AUGMENTATION.md`](AUGMENTATION.md) maps every known data-quality problem to the
-option that solves it (imbalance, leakage, lighting shift, …), compares the
-segmentation backends (`auto`/`threshold`/`otsu`/`grabcut`/`rembg`/`sam`), and
-documents the optional SAM integration (prompt modes, checkpoint sizes, and how to
-enable it). Notable data-quality controls:
-
-- **No train/val leakage** — `split.val_seed_holdout` reserves source seeds for
-  validation so a seed never appears in both splits.
-- **Class-balanced sampling** — `sampling.class_balanced` / `class_probs`.
-- **Multi-label CSV + COCO `extra_annotations`** — `export.multilabel_csv`,
-  `export.extra_annotations`.
+`configs/` holds ready-to-run dataset definitions (`root`, `wheat`, `test`,
+`soybean_healthy`) plus [`configs/example.yaml`](configs/example.yaml), a fully-commented
+reference exercising every option. Files accept flat keys or the grouped/nested layout
+(`segmentation:`, `split:`, `sampling:`, `augmentation:`, `export:`); CLI flags override
+file values.
 
 ## Data
 
-The full source datasets and generated outputs are **not** tracked in git
-(`seeds/`, `datasets/`, `out/`, and `*.zip` are gitignored — some exceed GitHub's
-file-size limits). A small, demo-runnable **sample** of seed images and
-annotations is included under `seeds/` so the pipeline can be exercised without
-the full corpus.
+Source datasets and generated outputs are **not** tracked in git (`seeds/`, `datasets/`,
+`out/`, `*.zip` are gitignored — some exceed GitHub's size limits). A small,
+demo-runnable sample of seed images is included under `seeds/` so the pipeline can be
+exercised without the full corpus.

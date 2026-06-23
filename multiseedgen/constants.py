@@ -1,9 +1,6 @@
 from __future__ import annotations
+
 """Version + cache-version constants and shared literals."""
-
-from typing import Any, Dict, List, Optional, Tuple
-
-
 
 
 __version__ = "3.0.1"

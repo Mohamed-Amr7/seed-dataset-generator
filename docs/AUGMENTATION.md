@@ -3,7 +3,7 @@
 This guide maps the known dataset problems to the MultiSeedGen options that solve
 them, compares the segmentation backends, and documents the SAM integration. A
 fully-commented config that exercises every option lives at
-[`configs/example.yaml`](configs/example.yaml).
+[`configs/example.yaml`](../configs/example.yaml).
 
 ## Problem → solution map
 
@@ -29,7 +29,7 @@ fully-commented config that exercises every option lives at
 
 All methods are selected with `segmentation.method` (or `--segment`) and share the
 same cut-out → polygon/COCO export path. Per-method parameters live under
-`segmentation.<method>` (see [`configs/example.yaml`](configs/example.yaml)).
+`segmentation.<method>` (see [`configs/example.yaml`](../configs/example.yaml)).
 
 | Method | Backend | Best for | Key params | Deps |
 |---|---|---|---|---|
@@ -76,7 +76,7 @@ python seedgen.py --config configs/example.yaml \
 ### Running SAM in Docker (opt-in)
 
 To avoid forcing torch on everyone, SAM has its own image
-([`docker/Dockerfile.sam`](docker/Dockerfile.sam), `python:3.12-slim`) behind a
+([`docker/Dockerfile.sam`](../docker/Dockerfile.sam), `python:3.12-slim`) behind a
 compose **profile** — the default image stays light. After downloading a checkpoint
 to `models/`:
 
@@ -90,7 +90,7 @@ The repo `models/` is mounted at `/app/models`, so the relative `--sam-checkpoin
 path resolves inside the container. torch is CPU-only by default (works with no
 NVIDIA toolkit). For **GPU SAM**, use the `sam-gpu` profile instead
 (`--profile sam-gpu … multiseedgen-sam-gpu`, CUDA torch, port 8002) — it requires
-the NVIDIA Container Toolkit. See [`docker/GPU_SETUP.md`](docker/GPU_SETUP.md)
+the NVIDIA Container Toolkit. See [`docker/GPU_SETUP.md`](../docker/GPU_SETUP.md)
 "Path 3" for both.
 
 ### Prompt modes (`sam.prompt_type`)

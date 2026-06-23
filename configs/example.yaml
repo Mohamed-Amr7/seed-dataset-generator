@@ -51,7 +51,7 @@ segmentation:
     # model_path: u2net      # rembg model name (default = rembg's u2net)
 
   sam:                       # used when method: sam (needs torch + segment-anything)
-    # checkpoint: models/sam_vit_b_01ec64.pth   # REQUIRED to enable SAM (see AUGMENTATION.md)
+    # checkpoint: models/sam_vit_b_01ec64.pth   # REQUIRED to enable SAM (see docs/AUGMENTATION.md)
     model_type: vit_b        # vit_h (~2.4GB) | vit_l (~1.2GB) | vit_b (~358MB, fits 6GB GPU)
     prompt_type: automatic   # automatic | box | points
     points_per_side: 32      # automatic-mode grid density

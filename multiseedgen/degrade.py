@@ -1,13 +1,11 @@
-from __future__ import annotations
 """Camera-matched photometric degradation (noise/JPEG/blur/vignette)."""
 
-from typing import Any, Dict, List, Optional, Tuple
+from __future__ import annotations
+
 import cv2
 import numpy as np
 
 from .models import Config
-
-
 
 
 # --------------------------------------------------------------------------- #
@@ -22,12 +20,11 @@ def _jpeg_quality(cfg: Config, rng: np.random.Generator) -> int:
     return int(rng.integers(lo, hi + 1))
 
 
-
 def _motion_blur(img: np.ndarray, length: int, rng) -> np.ndarray:
     length = max(1, int(length))
     if length < 2:
         return img
-    k = np.zeros((length, length), np.float32)
+    k: np.ndarray = np.zeros((length, length), np.float32)
     k[length // 2, :] = 1.0 / length
     ang = float(rng.uniform(0, 180))
     m = cv2.getRotationMatrix2D((length / 2, length / 2), ang, 1.0)
@@ -38,19 +35,16 @@ def _motion_blur(img: np.ndarray, length: int, rng) -> np.ndarray:
     return cv2.filter2D(img, -1, k)
 
 
-
 def _apply_vignette(img: np.ndarray, strength: float) -> np.ndarray:
     h, w = img.shape[:2]
     yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
     cy, cx = h / 2.0, w / 2.0
     r = np.sqrt(((xx - cx) / cx) ** 2 + ((yy - cy) / cy) ** 2)
-    fall = np.clip(1.0 - strength * (r ** 2), 0.0, 1.0)[..., None]
+    fall = np.clip(1.0 - strength * (r**2), 0.0, 1.0)[..., None]
     return img * fall
 
 
-
-def apply_degradation(canvas_f32: np.ndarray, cfg: Config,
-                      rng: np.random.Generator) -> np.ndarray:
+def apply_degradation(canvas_f32: np.ndarray, cfg: Config, rng: np.random.Generator) -> np.ndarray:
     """Camera-matched PHOTOMETRIC degradation on the final composite (per scene).
     These never move boxes, so labels stay correct. JPEG recompression is handled
     at save time via _jpeg_quality; geometric perspective (which WOULD move boxes)
@@ -69,7 +63,7 @@ def apply_degradation(canvas_f32: np.ndarray, cfg: Config,
         img = rng.poisson(scaled).astype(np.float32)
     if cfg.noise_sigma > 0:
         img = img + rng.normal(0, cfg.noise_sigma, img.shape)
-    if cfg.aug_gamma > 0:                            # random tone curve (lighting shift)
+    if cfg.aug_gamma > 0:  # random tone curve (lighting shift)
         g = max(0.1, float(rng.uniform(1.0 - cfg.aug_gamma, 1.0 + cfg.aug_gamma)))
         img = 255.0 * np.power(np.clip(img, 0, 255) / 255.0, 1.0 / g)
     return img

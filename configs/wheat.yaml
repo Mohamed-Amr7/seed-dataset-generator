@@ -1,4 +1,4 @@
-# Wheat — tiny, low-contrast, 256px sources. See RECOMMENDED_SETTINGS.md.
+# Wheat — tiny, low-contrast, 256px sources. See docs/RECOMMENDED_SETTINGS.md.
 config:
   sources: seeds/Varietal purity of wheat seeds dataset
   out: datasets/wheat
