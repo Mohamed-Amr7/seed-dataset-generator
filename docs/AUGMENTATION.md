@@ -43,6 +43,13 @@ same cut-out → polygon/COCO export path. Per-method parameters live under
 A per-source override manifest (`--segment-map`, JSON/CSV of glob → method) lets you
 mix methods within one job.
 
+The confidence skip-gate (`seg_conf_thresh`) drops cut-outs whose mask scores below the
+threshold. It always runs for `auto` (default `0.55`) and is **opt-in for the explicit
+methods**: there it defaults to `0` (off), so an un-tuned `threshold`/`otsu`/`grabcut`/`rembg`/`sam`
+run keeps every mask — set `seg_conf_thresh > 0` (per-method in the tuner, or in config/CLI) to
+also gate those. The automatic **rembg fallback stays `auto`-only** (it would silently swap the
+method you explicitly chose).
+
 ## SAM (Segment Anything) integration
 
 SAM is **import-guarded**: nothing is required to install or download unless you

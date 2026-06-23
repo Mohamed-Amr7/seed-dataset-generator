@@ -55,6 +55,27 @@ def test_classical_methods_return_cropped_bgra_patch(make_cfg, seed_on_uniform_b
     assert report["skipped"] is False
 
 
+def test_explicit_method_confidence_gate_is_opt_in(make_cfg, seed_on_uniform_bg):
+    """For a non-``auto`` method the confidence gate is opt-in. At the default ``0`` it
+    keeps every mask; raising ``seg_conf_thresh`` above the mask's score skips the source
+    as ``low_confidence`` WITHOUT routing it to rembg (the fallback stays auto-only)."""
+    # gate off (default for explicit methods) -> the mask is kept, with a real score
+    off = make_cfg(segment="otsu", rembg_fallback=True, seg_conf_thresh=0.0)
+    patch, rep = segment_seed(seed_on_uniform_bg, off)
+    assert patch is not None and rep["skipped"] is False
+    conf = rep["confidence"]
+    assert conf > 0.0
+
+    # opt-in: a threshold above the score skips the SAME source as low_confidence, and
+    # leaves the method unchanged (rembg_fallback=True must not fire outside auto).
+    on = make_cfg(segment="otsu", rembg_fallback=True, seg_conf_thresh=conf + 0.05)
+    patch2, rep2 = segment_seed(seed_on_uniform_bg, on)
+    assert patch2 is None
+    assert rep2["skipped"] is True
+    assert rep2["skip_reason"] == "low_confidence"
+    assert rep2["method"] == "otsu"  # not swapped to rembg
+
+
 def test_alpha_method_uses_existing_alpha_channel(make_cfg, seed_cutout):
     """A source that already carries a meaningful alpha channel is cropped to it with
     full confidence - no thresholding involved."""

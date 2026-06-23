@@ -58,13 +58,29 @@ export function SegTunerTab() {
     if (!schema || seeded.current) return
     const init: ConfigDict = {}
     for (const name of new Set(Object.values(TUNER_FIELDS).flat())) {
+      // seg_conf_thresh has a mode-dependent default (0.55 for auto, 0/off for explicit
+      // methods); leave it unseeded so the per-method field default drives the display.
+      if (name === 'seg_conf_thresh') continue
       init[name] = (config[name] ?? fieldMap[name]?.default ?? null) as ConfigValue
     }
     setParams(init)
     seeded.current = true
   }, [schema, fieldMap, config])
 
-  const methodFields = (TUNER_FIELDS[method] ?? []).map((nm) => fieldMap[nm]).filter(Boolean)
+  // The confidence gate always applies in auto; for explicit methods it's opt-in, so show
+  // the knob defaulting to 0 (off) with clarifying help instead of the auto 0.55 default.
+  const methodFields = (TUNER_FIELDS[method] ?? [])
+    .map((nm) => fieldMap[nm])
+    .filter(Boolean)
+    .map((f) =>
+      f.name === 'seg_conf_thresh' && method !== 'auto'
+        ? {
+            ...f,
+            default: 0,
+            help: 'skip cut-outs below this confidence (0 = keep all; off by default for explicit methods)',
+          }
+        : f,
+    )
 
   const thresh =
     typeof params.seg_conf_thresh === 'number'
@@ -76,6 +92,9 @@ export function SegTunerTab() {
     for (const name of TUNER_FIELDS[method] ?? []) {
       if (params[name] != null) mp[name] = params[name]
     }
+    // Confidence gate is opt-in for explicit methods: default it OFF (0) so an un-tuned
+    // check skips nothing. Sent in `mp` (spread last), it overrides any run-config value.
+    if (method !== 'auto' && mp.seg_conf_thresh == null) mp.seg_conf_thresh = 0
     return { ...cleanConfig(config), sources, segment: method, ...cleanConfig(mp) }
   }
 

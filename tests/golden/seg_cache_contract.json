@@ -1,8 +1,8 @@
 {
   "_seg_version": 6,
   "grabcut": {
-    "key": "7595b5a5d05fab70c285ef90cd4a107a",
-    "key_bg": "20b5d9c06ec3dca90e8bccc9b6f1425f",
+    "key": "0e76a7840c9b998920a353d76e28a480",
+    "key_bg": "a721cba059dc5ed60ae972e5dee1597f",
     "signature": {
       "bg_tolerance": 28.0,
       "ghost_blend": 1.0,
@@ -11,15 +11,15 @@
       "grabcut_rect_margin": 0.06,
       "morph_kernel": 5,
       "rembg_fallback": false,
-      "seg_conf_thresh": 0.55,
+      "seg_conf_thresh": 0.0,
       "segment": "grabcut",
       "shadow_sat_max": 0.35,
       "strip_shadow": true
     }
   },
   "otsu_no_fallback": {
-    "key": "5094bfff1ef52598d4ab2bf00b976f99",
-    "key_bg": "2d1edd24e15a0f0167a1bfc180689651",
+    "key": "f054178cd41d8e81bdbf81259d1c93e9",
+    "key_bg": "61f4c0893b45f58bfcd0e5d1c4df00de",
     "signature": {
       "bg_tolerance": 28.0,
       "ghost_blend": 1.0,
@@ -27,15 +27,15 @@
       "otsu_blur_kernel": 0,
       "otsu_threshold_adjustment": 0,
       "rembg_fallback": false,
-      "seg_conf_thresh": 0.55,
+      "seg_conf_thresh": 0.0,
       "segment": "otsu",
       "shadow_sat_max": 0.35,
       "strip_shadow": true
     }
   },
   "otsu_override_grabcut": {
-    "key": "58232037bce26e18a9f5b7c67ffb1039",
-    "key_bg": "aec31b8b511d115bd282d69602e0a2bd",
+    "key": "bcc799f70756928b70b5491da2163f2b",
+    "key_bg": "8d736f1ec0d9ab15e1f66375bc9cb319",
     "signature": {
       "bg_tolerance": 12.0,
       "ghost_blend": 1.0,
@@ -44,15 +44,15 @@
       "grabcut_rect_margin": 0.06,
       "morph_kernel": 5,
       "rembg_fallback": false,
-      "seg_conf_thresh": 0.55,
+      "seg_conf_thresh": 0.0,
       "segment": "grabcut",
       "shadow_sat_max": 0.35,
       "strip_shadow": false
     }
   },
   "otsu_with_fallback": {
-    "key": "f50e5d22ab2dec3ca2967dc5c51deaaf",
-    "key_bg": "8d12de06d2c51781a195d846acffd161",
+    "key": "1f604156a74417f0db48f439f9d15c90",
+    "key_bg": "4ed42bed00e2ddeedb50e29a5a6a0068",
     "signature": {
       "bg_tolerance": 28.0,
       "ghost_blend": 1.0,
@@ -61,29 +61,29 @@
       "otsu_threshold_adjustment": 0,
       "rembg_device": "cpu",
       "rembg_fallback": true,
-      "seg_conf_thresh": 0.55,
+      "seg_conf_thresh": 0.0,
       "segment": "otsu",
       "shadow_sat_max": 0.35,
       "strip_shadow": true
     }
   },
   "rembg": {
-    "key": "0ec2bb5b5878fb4bc4e6dc232927be9c",
-    "key_bg": "d4dafe101e44c5e3b561d3e150e08210",
+    "key": "77becf523378a1d216e13e553628ae88",
+    "key_bg": "e895b26dd784e8644f815191c9627359",
     "signature": {
       "bg_tolerance": 28.0,
       "ghost_blend": 1.0,
       "rembg_device": "cpu",
       "rembg_fallback": false,
-      "seg_conf_thresh": 0.55,
+      "seg_conf_thresh": 0.0,
       "segment": "rembg",
       "shadow_sat_max": 0.35,
       "strip_shadow": true
     }
   },
   "sam": {
-    "key": "7aceb7616e04455c252170a76e86e83d",
-    "key_bg": "1b32485fac0d44db4c32b7bad8c77925",
+    "key": "6faf70d629439744788685b5d18a49eb",
+    "key_bg": "4319bfbe1fc6bcfa4bcf96cd230b0373",
     "signature": {
       "bg_tolerance": 28.0,
       "ghost_blend": 1.0,
@@ -97,21 +97,21 @@
         "prompt_type": "automatic",
         "stability_score_thresh": 0.95
       },
-      "seg_conf_thresh": 0.55,
+      "seg_conf_thresh": 0.0,
       "segment": "sam",
       "shadow_sat_max": 0.35,
       "strip_shadow": true
     }
   },
   "threshold": {
-    "key": "d5428f01da47c12ed5209116988db8f7",
-    "key_bg": "05d1d38c9e0714e5c982c49936d258d6",
+    "key": "e36561e39a1753b0eea3a8d36de3ae83",
+    "key_bg": "e2dd20bbf7b4bbd2c11faa4826542996",
     "signature": {
       "bg_tolerance": 28.0,
       "ghost_blend": 1.0,
       "morph_kernel": 5,
       "rembg_fallback": false,
-      "seg_conf_thresh": 0.55,
+      "seg_conf_thresh": 0.0,
       "segment": "threshold",
       "shadow_sat_max": 0.35,
       "strip_shadow": true

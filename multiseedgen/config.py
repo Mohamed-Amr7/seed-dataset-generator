@@ -165,6 +165,11 @@ class Config(BaseModel):
             self.class_balanced = True  # explicit weights imply balanced mode
         if self.fmt == "yolo-seg":
             self.masks = True  # seg labels require per-seed polygons
+        # The confidence skip-gate is opt-in for explicit methods: when the user picked a
+        # non-``auto`` method and didn't set the threshold, default it OFF (0) so the gate
+        # in segmentation.segment.segment_seed keeps every mask. ``auto`` keeps its default.
+        if self.segment != "auto" and "seg_conf_thresh" not in self.model_fields_set:
+            self.seg_conf_thresh = 0.0
         # --- range / ordering checks (raise only; never mutate values) ---
         if self.min_seeds > self.max_seeds:
             raise ValueError(

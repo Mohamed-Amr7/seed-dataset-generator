@@ -26,6 +26,11 @@ export function isFieldVisible(name: string, segment: string): boolean {
 // Which segmentation config knobs the tuner exposes for each method, in display order.
 // These are rendered from the live /api/schema metadata (widget/help/default) but their
 // values are kept LOCAL to the tuner (they don't write to the shared run config).
+//
+// `seg_conf_thresh` (the confidence skip-gate) appears for every method: it always gates
+// in `auto`, and is opt-in for explicit methods (default 0 = off, so an un-tuned explicit
+// run skips nothing). `rembg_fallback` stays auto-only — it silently swaps the chosen
+// method, so it must not appear for an explicit method.
 export const TUNER_FIELDS: Record<string, string[]> = {
   auto: [
     'seg_conf_thresh',
@@ -36,12 +41,19 @@ export const TUNER_FIELDS: Record<string, string[]> = {
     'bg_tolerance',
     'morph_kernel',
   ],
-  threshold: ['bg_tolerance', 'morph_kernel'],
-  otsu: ['otsu_blur_kernel', 'otsu_threshold_adjustment', 'morph_kernel'],
-  grabcut: ['grabcut_iters', 'grabcut_rect_margin', 'grabcut_min_object_area', 'morph_kernel'],
-  rembg: ['rembg_model', 'rembg_provider'],
-  alpha: [],
+  threshold: ['seg_conf_thresh', 'bg_tolerance', 'morph_kernel'],
+  otsu: ['seg_conf_thresh', 'otsu_blur_kernel', 'otsu_threshold_adjustment', 'morph_kernel'],
+  grabcut: [
+    'seg_conf_thresh',
+    'grabcut_iters',
+    'grabcut_rect_margin',
+    'grabcut_min_object_area',
+    'morph_kernel',
+  ],
+  rembg: ['seg_conf_thresh', 'rembg_model', 'rembg_provider'],
+  alpha: ['seg_conf_thresh'],
   sam: [
+    'seg_conf_thresh',
     'sam_checkpoint',
     'sam_model_type',
     'sam_prompt_type',

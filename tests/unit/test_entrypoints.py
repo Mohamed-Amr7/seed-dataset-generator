@@ -13,7 +13,33 @@ import sys
 import pytest
 
 from multiseedgen.__main__ import main
+from multiseedgen.cliconfig import parse_args
 from multiseedgen.logging_setup import configure_logging
+
+
+def _argv(tmp_path, *extra):
+    """A minimal valid argv (required --sources/--out) plus the flags under test."""
+    return ["--sources", str(tmp_path / "src"), "--out", str(tmp_path / "out"), *extra]
+
+
+def test_explicit_method_defaults_conf_thresh_off(tmp_path):
+    """An explicit segmentation method with no threshold set defaults the skip-gate OFF
+    (0), so existing non-auto runs keep every mask (the gate is opt-in there)."""
+    cfg = parse_args(_argv(tmp_path, "--segment", "grabcut"))
+    assert cfg.segment == "grabcut"
+    assert cfg.seg_conf_thresh == 0.0
+
+
+def test_explicit_seg_conf_thresh_opts_in(tmp_path):
+    """Setting --seg-conf-thresh opts the explicit method into the gate (value preserved)."""
+    cfg = parse_args(_argv(tmp_path, "--segment", "grabcut", "--seg-conf-thresh", "0.6"))
+    assert cfg.seg_conf_thresh == pytest.approx(0.6)
+
+
+def test_auto_keeps_its_default_conf_thresh(tmp_path):
+    """``auto`` is unaffected: it keeps its configured default gate (0.55)."""
+    cfg = parse_args(_argv(tmp_path, "--segment", "auto"))
+    assert cfg.seg_conf_thresh == pytest.approx(0.55)
 
 
 @pytest.fixture

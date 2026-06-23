@@ -29,9 +29,10 @@ def segment_seed(
     Returns (tightly-cropped BGRA patch or None, report). The report carries the
     method used, a 0..1 ``confidence``, and skip bookkeeping (``skipped`` /
     ``skip_reason``). In ``auto`` mode a low-confidence or None classical result is
-    automatically routed to rembg (when available) before giving up, and a final
-    confidence gate skips genuinely hopeless sources rather than baking a
-    background patch into the dataset."""
+    automatically routed to rembg (when available) before giving up. A final
+    confidence gate then skips genuinely hopeless sources rather than baking a
+    background patch into the dataset: it always runs for ``auto`` and is opt-in for
+    explicit methods (active when ``seg_conf_thresh`` > 0, which defaults to 0 there)."""
     ov = override or {}
     method = ov.get("method", cfg.segment)
     tol = float(ov.get("bg_tolerance", cfg.bg_tolerance))
@@ -141,8 +142,12 @@ def segment_seed(
         rep.update(skipped=True, skip_reason="oversize_safeguard", hit_safeguard=True)
         return None, rep
 
-    # ---- final confidence gate (auto only; fallback already attempted) ----
-    if is_auto and rep["confidence"] < cfg.seg_conf_thresh:
+    # ---- final confidence gate ----
+    # Auto always applies it (fallback already attempted above); explicit-method modes
+    # apply it only when opted in. The opt-in is a non-zero ``seg_conf_thresh``: it
+    # defaults to 0 for non-auto methods (see cliconfig.parse_args / the tuner), so an
+    # un-tuned explicit run keeps every mask and existing behaviour is unchanged.
+    if rep["confidence"] < cfg.seg_conf_thresh:
         rep.update(skipped=True, skip_reason=rep["skip_reason"] or "low_confidence")
         return None, rep
 

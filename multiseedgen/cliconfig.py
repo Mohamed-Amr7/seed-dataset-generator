@@ -657,6 +657,14 @@ def parse_args(argv=None) -> Config:
         if hasattr(a, dest):
             merged[dest] = getattr(a, dest)
 
+    # ``_config_defaults`` always materialises seg_conf_thresh (0.55), which would hide
+    # "did the user set it?" from Config's model validator. Drop the non-explicit default so
+    # the validator can default the gate OFF for explicit methods (opt-in) while ``auto``
+    # keeps 0.55; an explicitly-provided value (file or CLI) is preserved.
+    explicit_conf = "seg_conf_thresh" in file_vals or "seg_conf_thresh" in present
+    if not explicit_conf:
+        merged.pop("seg_conf_thresh", None)
+
     valid = set(Config.model_fields)
     merged = {k: v for k, v in merged.items() if k in valid}
     if merged.get("sources") is None or merged.get("out") is None:

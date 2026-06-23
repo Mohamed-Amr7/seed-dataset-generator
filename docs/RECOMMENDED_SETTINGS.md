@@ -164,6 +164,10 @@ python seedgen.py \
   body. The **Segmentation tuner** now inherits the loaded preset's method, so loading
   "Soybean — Healthy (single class)" makes the tuner check `rembg` (it no longer always tests
   `auto`).
+- The confidence skip-gate (`seg_conf_thresh`) used to run only in `auto`; it now applies to any
+  method, but is **opt-in for explicit methods** — it defaults to `0` (off) for non-`auto`, so
+  existing `rembg`/`grabcut`/… runs skip nothing unless you raise it. Set it (e.g. `0.6`) to also
+  drop low-confidence cut-outs in an explicit-method run. The **rembg fallback stays auto-only**.
 
 ---
 

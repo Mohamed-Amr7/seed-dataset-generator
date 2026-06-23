@@ -73,7 +73,7 @@
   "scale_min": 0.06,
   "scan_limit": 0,
   "seed": 7,
-  "seg_conf_thresh": 0.55,
+  "seg_conf_thresh": 0.0,
   "segment": "rembg",
   "segment_map": null,
   "shadow": true,
