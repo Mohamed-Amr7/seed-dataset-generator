@@ -18,7 +18,7 @@ on demand) unless a venv/conda env is already active.
 | Goal | Command | Adds on top of core | Segmentation |
 |------|---------|---------------------|--------------|
 | Lean CLI only | `make install` → `seedgen --config …` | nothing | classical |
-| Lean web UI | `make install-web` → `make run` | FastAPI | classical |
+| Lean web UI | `make install-web` → `multiseedgen-web` | FastAPI | classical |
 | **Web app (recommended)** | `make run` | FastAPI + CPU rembg | rembg (CPU) |
 | Generate headless | `make generate CONFIG=…` | FastAPI + CPU rembg | rembg (CPU) |
 | **GPU — rembg** | `make run-gpu` | `onnxruntime-gpu` + CUDA 12 wheels | rembg (GPU) |
@@ -82,9 +82,9 @@ launches the UI on `http://127.0.0.1:8000`. Override the bind address with
 ### Local — lean (`make install` / `make install-web`)
 `make install` installs just the core (`numpy`, `opencv-python-headless`, `joblib`,
 `pyyaml`, `tqdm`, `pydantic`) — no web UI, no model downloads; segmentation uses the
-classical methods. Add the UI without a model via `make install-web`, then `make run`
-(it won't reinstall rembg if you only want the lean web app — run `multiseedgen-web`
-directly, or `seedgen --segment otsu …` for the CLI).
+classical methods. Add the UI without a model via `make install-web`. Note that `make run`
+installs `.[web,rembg]` (it adds CPU rembg), so to keep the web app lean launch it directly
+with `multiseedgen-web` after `make install-web`, or use `seedgen --segment otsu …` for the CLI.
 
 ### Local — GPU rembg (`make run-gpu`)
 `make run-gpu` (or `make install-gpu`) installs the `gpu` extra and prints the available

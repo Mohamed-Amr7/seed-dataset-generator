@@ -41,15 +41,16 @@ Install only what you need (extras are additive, e.g. `pip install -e ".[web,rem
 
 GPU notes (CUDA pins, the `onnxruntime-gpu` 1.26 vs 1.27 choice, SAM checkpoints) live in
 [`../docker/GPU_SETUP.md`](../docker/GPU_SETUP.md). The SAM backend additionally needs a
-downloaded checkpoint — see [augmentation.md](AUGMENTATION.md).
+downloaded checkpoint — see [AUGMENTATION.md](AUGMENTATION.md).
 
 ## Verify
 
 ```bash
 pip install -e ".[dev]"
-pytest -m "not gpu"        # runs the fast + integration suite (skips GPU-only tests)
+pytest -m "not gpu and not golden"   # fast + integration suite (skips GPU + host-pinned golden tests)
 ```
 
-A green run confirms the package imports, the deterministic pipeline reproduces its
-golden manifests, and the web layer responds. See [contributing.md](contributing.md) for
-the full developer workflow.
+A green run confirms the package imports, the deterministic pipeline passes its invariants
+(backend/worker determinism, config/schema/seg-cache contracts), and the web layer responds. The
+host-pinned `golden` byte tests are skipped here — run them on your own host too; see
+[contributing.md](contributing.md) for the full developer workflow.

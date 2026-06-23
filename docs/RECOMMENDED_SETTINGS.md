@@ -56,7 +56,7 @@ Or do all of it in the browser: `python -m multiseedgen.web` → http://localhos
 
 Leave `--vignette 0` when using `--bg-from-sources` (the real tray already carries its
 vignette — don't double it). Keep `--blend alpha` (default); `seamless` is slower and only
-occasionally better. Keep `--perspective 0` unless your real photos are angled.
+occasionally better. `--perspective` is currently **reserved (not yet applied)**, so leave it at `0`.
 
 > **Drop shadows fade into the background** (v3.0.1). The shadow is rendered on a padded
 > canvas so its blur tapers to zero instead of being clipped to each seed's bounding box — the
@@ -283,7 +283,9 @@ config:
 
 ## 5. Segmentation tuning (when good seeds get skipped)
 
-Read `out/seg_report.txt` (or the Segmentation-tuner tab). If legitimate seeds are skipped:
+Read `out/seg_report.txt` (or the **Segmentation-tuner tab**, which shows kept/skipped counts and a
+per-seed, confidence-coded gallery so you can see exactly which cut-outs were dropped and why). If
+legitimate seeds are skipped:
 
 1. Lower the gate: `--seg-conf-thresh 0.45`.
 2. Force a method per source folder with a **segment map** (`--segment-map map.json`):
@@ -298,6 +300,11 @@ Read `out/seg_report.txt` (or the Segmentation-tuner tab). If legitimate seeds a
 
 First match wins; it's folded into the cache key so changing it re-segments only what's affected.
 3. Watermark fragment surviving on a Test cut-out? `--segment rembg` (or map → rembg) removes it.
+
+Per-method knobs can also be set in config files under nested `segmentation.<method>` sections
+(e.g. `segmentation.grabcut.iterations`, `segmentation.otsu.threshold_adjustment`,
+`segmentation.u2net.device`) — see [`configs/example.yaml`](../configs/example.yaml); each method's
+params are isolated in the cache key, so tuning one never invalidates another's cache.
 
 ---
 

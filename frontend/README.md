@@ -1,73 +1,42 @@
-# React + TypeScript + Vite
+# MultiSeedGen web UI (frontend)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The source for MultiSeedGen's single-page web UI: **React + TypeScript + Vite + Tailwind v4 +
+Radix UI**, with TanStack Query (server state), Zustand (UI state), Zod (validation) and Vitest
+(tests). It builds into **`../multiseedgen/web/static/`**, a committed bundle the FastAPI backend
+serves — so the Python package runs with no Node toolchain.
 
-Currently, two official plugins are available:
+## Quick start
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Node **22 LTS** (`.nvmrc`; `engines` requires ≥ 20). Run the backend and Vite dev server together:
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+multiseedgen-web                 # FastAPI backend on :8000 (separate terminal)
+cd frontend && npm ci && npm run dev   # UI on :5173, hot-reload
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Vite proxies `/api` and `/ws` to `:8000`, so there's no CORS to configure. From the repo root,
+`make dev` starts both sides for you.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Scripts
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+| Script | What it does |
+|--------|--------------|
+| `npm run dev` | Vite dev server (`:5173`, HMR) |
+| `npm run build` | `tsc -b && vite build` → writes the committed `../multiseedgen/web/static/` bundle |
+| `npm run typecheck` | `tsc -b --noEmit` (strict) |
+| `npm run lint` | ESLint (typescript-eslint, react-hooks, jsx-a11y) |
+| `npm run test` / `test:watch` / `coverage` | Vitest + Testing Library |
+| `npm run format` / `format:check` | Prettier write / check |
+| `npm run preview` | Serve a production build locally |
+
+## The committed-bundle rule
+
+The packaged app serves `../multiseedgen/web/static/`, **not** `frontend/src`. After any UI change,
+run `npm run build` and **commit the regenerated `../multiseedgen/web/static/` assets** alongside
+your source change — a source-only edit ships stale JS, and CI fails on the resulting bundle drift.
+
+## More
+
+The full dev loop, the regression gate (lint / typecheck / test / build), and project conventions
+live in **[`../docs/contributing.md`](../docs/contributing.md)** (Frontend section). The HTTP/WS API
+this UI talks to is documented in **[`../docs/api.md`](../docs/api.md)**.

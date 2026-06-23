@@ -31,14 +31,19 @@ guidance is in [RECOMMENDED_SETTINGS.md](RECOMMENDED_SETTINGS.md).
 
 ```bash
 multiseedgen-web                 # serves on the printed URL (default 127.0.0.1:8000)
+multiseedgen-web --host 0.0.0.0 --port 9000   # override the bind address (or set HOST / PORT)
 ```
 
 The UI is a React + TypeScript single-page app (built with Vite, styled with Tailwind +
 Radix UI) served by FastAPI. It exposes the full config as a grouped, validated form (with
 presets and a sandboxed path picker), streams the run log live over a websocket, keeps a
-run-history list, and includes a segmentation tuner and a dataset browser. You can also
-**upload seed images** (drag-and-drop) and **download a generated dataset as a `.zip`**
-straight from the browser. A dark/light theme toggle is persisted locally. It is a
+run-history list, and includes a **segmentation tuner** and a **dataset browser**. The tuner
+runs a no-dataset segmentation check with per-method settings, a stop button, and live progress,
+then shows kept/skipped counts and a per-seed, confidence-coded gallery — so you can dial in a
+method before a full run. For seed sources you can either **upload images** (drag-and-drop,
+validated as an all-or-nothing batch) or **browse an existing server folder** with the path
+picker and set `sources` directly; a generated dataset **downloads as a `.zip`** (whole dataset
+or a single split) straight from the browser. A dark/light theme toggle is persisted locally. It is a
 **single-user, local tool** — there is intentionally no auth, CORS, or rate-limiting; do
 not expose it to an untrusted network. Filesystem access (browse, upload, download) is
 sandboxed to the project root, the configured data root, and the temp dir.
@@ -47,8 +52,9 @@ Set `MULTISEEDGEN_DATA_ROOT` to point the dataset browser / path picker at your 
 directory; set `MULTISEEDGEN_LOG_LEVEL` (e.g. `DEBUG`) to adjust verbosity.
 
 The compiled UI ships inside the package (`multiseedgen/web/static/`), so `multiseedgen-web`
-works from a plain `pip install` with no Node toolchain. To change the UI, see the frontend
-dev loop in [contributing.md](contributing.md).
+works from a plain `pip install` with no Node toolchain. The HTTP/WS endpoints behind the UI
+are documented in [api.md](api.md); to change the UI, see the frontend dev loop in
+[contributing.md](contributing.md).
 
 ## Configuration files
 

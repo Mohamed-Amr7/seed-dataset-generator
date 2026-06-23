@@ -9,7 +9,7 @@ contract enforced automatically.
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"          # add web/rembg/sam if you touch those paths
-pre-commit install               # runs ruff + mypy on every commit
+pre-commit install               # runs ruff + ruff-format (+ frontend prettier/eslint) per commit
 ```
 
 ## The regression gate
@@ -20,12 +20,13 @@ Run this before every commit — it is exactly what CI runs:
 ruff check .                     # lint
 ruff format --check .            # formatting
 mypy multiseedgen                # type check
-pytest -m "not gpu"              # tests (GPU-only tests skipped off a CUDA host)
+pytest -m "not gpu and not golden"   # tests (GPU + host-pinned golden tests skipped — exactly what CI runs)
 ```
 
-All four must be green. The single most important check is `pytest` staying green on
-`tests/test_determinism.py` and `tests/test_golden.py`: those guard the byte-identity
-contract. A diff there means your change altered generated pixels.
+All four must be green. The portable marker skips the host-pinned `golden` tests (same as
+CI); run them locally too — `pytest tests/test_golden.py` — since they and
+`tests/test_determinism.py` guard the byte-identity contract. A diff there means your change
+altered generated pixels.
 
 ## Frontend (web UI)
 
@@ -42,14 +43,14 @@ multiseedgen-web                 # backend on :8000 (terminal 1)
 cd frontend && npm ci && npm run dev   # UI on :5173, hot-reload (terminal 2)
 ```
 
-Frontend gate (what CI's `frontend` job runs — all must be green):
+Frontend gate (what CI's `frontend` job runs — all must be green; Prettier `format:check` runs
+in pre-commit, not this job):
 
 ```bash
 cd frontend
 npm run lint           # ESLint (typescript-eslint, react-hooks, jsx-a11y)
 npm run typecheck      # tsc --noEmit (strict)
 npm run test           # Vitest + Testing Library
-npm run format:check   # Prettier
 npm run build          # tsc + vite build -> ../multiseedgen/web/static (commit the result)
 ```
 

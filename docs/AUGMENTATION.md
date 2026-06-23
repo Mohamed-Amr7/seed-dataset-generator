@@ -11,7 +11,7 @@ fully-commented config that exercises every option lives at
 |---|---|---|
 | Invalid / out-of-bounds bboxes | `min_visibility`, `min_visible_occluded`, `min_box_px` | boxes are clipped to the canvas and degenerate/empty masks are dropped at export. |
 | Dataset imbalance (classes) | `sampling.class_balanced`, `sampling.class_probs` | sample a class first (uniform or weighted), then a seed within it — counters uneven source counts. |
-| Overfitting / poor generalization | `augmentation.rotation`, `scale_min/max`, `flip`, `augmentation.jitter_*`, `augmentation.shear`, `augmentation.gamma`, `blur_max_sigma`, `noise_sigma`, `poisson_noise` | per-seed geometric + photometric variety plus camera degradation. |
+| Overfitting / poor generalization | `augmentation.rotation`, `scale_min/max`, `flip`, `augmentation.jitter_*`, `augmentation.shear`, `augmentation.gamma`, `blur_max_sigma`, `motion_blur_max`, `noise_sigma`, `poisson_noise` | per-seed geometric + photometric variety plus camera degradation. |
 | Small/large seed-scale variability | `scale_min`, `scale_max` | per-seed random scale before placement. |
 | Overlapping seeds / clutter | `overlap_mode: limit`, `max_iou` | rejects placements whose box IoU exceeds the threshold (8 tries/seed). |
 | Light / background shift | `backgrounds`, `textures`, `bg_from_sources`, `augmentation.gamma`, `vignette` | solid/gradient/noise/texture/real backgrounds + random gamma + vignette. |
@@ -23,7 +23,8 @@ fully-commented config that exercises every option lives at
 > Geometric augmentations that would move a label box at the scene level (scene-wide
 > shear / perspective) are intentionally avoided to keep annotations exact. Per-seed
 > shear (`augmentation.shear`) is applied to the cut-out *before* placement, so the
-> box is recomputed from the warped alpha and stays correct.
+> box is recomputed from the warped alpha and stays correct. (The `perspective` /
+> `--perspective` knob is consequently **reserved — not currently applied**; leave it at `0`.)
 
 ## Segmentation methods
 
@@ -49,6 +50,12 @@ methods**: there it defaults to `0` (off), so an un-tuned `threshold`/`otsu`/`gr
 run keeps every mask — set `seg_conf_thresh > 0` (per-method in the tuner, or in config/CLI) to
 also gate those. The automatic **rembg fallback stays `auto`-only** (it would silently swap the
 method you explicitly chose).
+
+**Device-adaptive rembg.** With `rembg_provider: auto` (the default) the U²-Net session probes the
+host at load time — it runs on CUDA when a GPU + `onnxruntime-gpu` are present, else CPU — and if a
+worker hits a CUDA out-of-memory mid-run it retries that cut-out on CPU instead of crashing the job.
+Pin `rembg_provider: cuda`/`cpu` for a deterministic device (GPU and CPU masks can differ by ~0.01%,
+so the resolved device is folded into the segmentation cache key).
 
 ## SAM (Segment Anything) integration
 

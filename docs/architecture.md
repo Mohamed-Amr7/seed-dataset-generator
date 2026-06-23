@@ -21,6 +21,7 @@ multiseedgen/
     segment.py       segment_seed() cascade + extract_background()
     cache.py         content-hash + SEG_VERSION + params disk cache
     loader.py        load_seeds(): discover sources, segment, build the Seed pool
+  sam_segment.py     optional Segment Anything backend (import-guarded; used by segmentation/session.py)
   compositing/       paint seeds onto a canvas
     transforms.py    per-seed scale/flip/rotate/shear/jitter
     backgrounds.py   solid/gradient/noise/seedbed/texture backgrounds
@@ -44,7 +45,7 @@ frontend/            React + TS + Tailwind v4 + Radix UI source for the web UI (
 
 The web UI is a single-page app: the FastAPI layer is a thin, sandboxed wrapper over the
 same CLI/pipeline (it launches `python -m multiseedgen` as a subprocess and streams its
-log over a websocket). The frontend builds into `web/static/` (committed) so the package
+log over a websocket); see [api.md](api.md) for the full route reference. The frontend builds into `web/static/` (committed) so the package
 runs without a Node toolchain; see [contributing.md](contributing.md) for the dev loop.
 
 `seedgen.py` (repo root) is a backward-compat shim re-exporting the package API so
@@ -64,7 +65,7 @@ threading backend; results are gathered and written serially.
 
 ## The single source of truth: `Config`
 
-`config.py` defines one **flat** Pydantic v2 `Config` (≈ 89 fields). It is the only place
+`config.py` defines one **flat** Pydantic v2 `Config` (~90 fields). It is the only place
 that knows the field set, types, choices (`Literal[...]`), and defaults. Every consumer
 derives from it: the CLI parser, the YAML/JSON loader, the web form schema, and
 `run_config.yaml`. `Literal` types double as CLI `choices` and form choices.
