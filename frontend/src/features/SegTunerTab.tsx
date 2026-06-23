@@ -44,6 +44,11 @@ export function SegTunerTab() {
   const [params, setParams] = useState<ConfigDict>({})
   const [out, setOut] = useState<string | null>(null)
 
+  // `# seeds`: a positive N samples N sources; 0 (or empty) means the whole dataset.
+  const parsedN = parseInt(n, 10)
+  const seedCount = Number.isFinite(parsedN) ? Math.max(0, parsedN) : 0
+  const wholeDataset = seedCount === 0
+
   // Flatten the schema into name -> field so per-method knobs render with their real
   // widget / help / default. Values are kept LOCAL (params); they never touch the store.
   const fieldMap = useMemo(() => {
@@ -99,7 +104,7 @@ export function SegTunerTab() {
   }
 
   const checkMut = useMutation({
-    mutationFn: () => segCheck(buildPayload(), Math.max(1, parseInt(n, 10) || 24)),
+    mutationFn: () => segCheck(buildPayload(), seedCount),
     onSuccess: (res) => {
       setOut(res.out)
       socket.clear()
@@ -144,7 +149,7 @@ export function SegTunerTab() {
         </p>
       </div>
 
-      <div className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <div className="flex flex-col gap-1">
           <Label htmlFor="seg-sources">Sources</Label>
           <div className="flex gap-2">
@@ -194,12 +199,16 @@ export function SegTunerTab() {
           <Input
             id="seg-n"
             type="number"
-            min={1}
+            min={0}
+            step={1}
             value={n}
+            placeholder="0 = all"
             onChange={(e) => setN(e.target.value)}
           />
           <span className="text-[11px] leading-tight text-muted-foreground">
-            samples this many sources (round-robin across classes); counts reflect exactly these
+            {wholeDataset
+              ? 'whole dataset: segments every source (full report); previews up to 500 cut-outs'
+              : `samples ${seedCount} source${seedCount === 1 ? '' : 's'} (round-robin across classes); counts reflect exactly these. Use 0 for the whole dataset`}
           </span>
         </div>
       </div>

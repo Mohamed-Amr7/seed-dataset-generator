@@ -56,7 +56,9 @@ Or do all of it in the browser: `python -m multiseedgen.web` → http://localhos
 
 Leave `--vignette 0` when using `--bg-from-sources` (the real tray already carries its
 vignette — don't double it). Keep `--blend alpha` (default); `seamless` is slower and only
-occasionally better. `--perspective` is currently **reserved (not yet applied)**, so leave it at `0`.
+occasionally better. `--perspective` applies a per-seed perspective warp before placement
+(box recomputed from the warped alpha); a small value like `0.05`–`0.1` adds viewpoint
+variety, `0` disables it.
 
 > **Drop shadows fade into the background** (v3.0.1). The shadow is rendered on a padded
 > canvas so its blur tapers to zero instead of being clipped to each seed's bounding box — the

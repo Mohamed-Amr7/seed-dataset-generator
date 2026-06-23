@@ -128,7 +128,7 @@ class Config(BaseModel):
     blur_max_sigma: float = 0.0
     motion_blur_max: int = 0
     vignette: float = 0.0
-    perspective: float = 0.0  # OFF by default; applied pre-label if >0
+    perspective: float = 0.0  # max per-seed corner jitter (frac of cut-out, 0-0.3); pre-label if >0
 
     # data split
     class_mode: Literal["single", "subfolders"] = "single"
@@ -181,4 +181,13 @@ class Config(BaseModel):
             )
         if not (0.0 <= self.val_split <= 1.0):
             raise ValueError(f"val_split ({self.val_split}) must be in [0, 1]")
+        # perspective is the max per-seed corner jitter as a FRACTION of the cut-out, so
+        # the warped canvas grows ~linearly with it; an out-of-range value (e.g. a user
+        # assuming degrees/pixels) balloons the warp buffer until generation OOMs. Cap it.
+        if not (0.0 <= self.perspective <= 0.3):
+            raise ValueError(
+                f"perspective ({self.perspective}) must be in [0, 0.3] - it is the max "
+                "per-seed corner jitter as a fraction of the cut-out (e.g. 0.1), not "
+                "degrees or pixels"
+            )
         return self

@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import sys
 import tempfile
 import zipfile
@@ -62,6 +63,7 @@ ALLOWED_BASES = [ROOT, DATA_ROOT, TMP]
 
 LOG_MAXLINES = 4000  # bounded per-run log ring buffer
 RUNS_MAX = 40  # cap retained runs (evict oldest finished)
+SEG_CHECK_GALLERY_CAP = 500  # max cut-outs rendered for a "whole dataset" tuner check
 _DATASET_SCAN_DEPTH = 6  # max directory depth when discovering datasets (bounds the walk)
 _UPLOAD_EXTS = {".png", ".jpg", ".jpeg"}  # seed-upload allowlist (also content-sniffed)
 _UPLOAD_MAX_BYTES = 25 * 1024 * 1024  # 25 MB per uploaded seed image
@@ -152,12 +154,26 @@ async def config_save(req: ConfigSaveRequest) -> dict:
 # --------------------------------------------------------------------------- #
 # runs (subprocess + live log stream)                                         #
 # --------------------------------------------------------------------------- #
+def _reap_seg_dir(run: dict | None) -> None:
+    """Remove a segmentation check's PRIVATE temp output dir when its run is evicted, so
+    per-check dirs don't accumulate in TMP. Only dirs we created (``TMP/msg_segcheck_*``)
+    are touched - an explicit user-supplied ``out`` is left alone."""
+    run = run or {}
+    out = run.get("out")
+    if not out or run.get("kind") != "segment":
+        return
+    p = Path(out)
+    if p.parent == TMP and p.name.startswith("msg_segcheck_"):
+        shutil.rmtree(p, ignore_errors=True)
+
+
 def _evict_runs() -> None:
-    """Bound RUNS: drop the oldest finished runs once over the cap."""
+    """Bound RUNS: drop the oldest finished runs once over the cap (reaping each evicted
+    seg-check's private output dir along the way)."""
     while len(RUNS) > RUNS_MAX:
         for k in list(RUNS):  # insertion order = oldest first
             if RUNS[k]["status"] != "running":
-                RUNS.pop(k, None)
+                _reap_seg_dir(RUNS.pop(k, None))
                 break
         else:
             break  # nothing finished to evict
@@ -225,6 +241,9 @@ async def _launch(cfg: dict, extra_args: list | None = None, label: str = "run")
         "cmd": " ".join(argv),
         "returncode": None,
         "cfg_path": str(cfg_path),
+        # 'segment' = a tuner check (no browsable dataset); 'generate' = a real run. The UI
+        # uses this to hide the "Browse dataset" hand-off for seg checks.
+        "kind": "segment" if label == "seg" else "generate",
     }
     _evict_runs()
     asyncio.create_task(_pump(rid))
@@ -241,7 +260,13 @@ async def start_run(req: StartRunRequest) -> dict:
 def list_runs() -> dict:
     return {
         "runs": [
-            {"id": k, "status": v["status"], "out": v["out"], "returncode": v["returncode"]}
+            {
+                "id": k,
+                "status": v["status"],
+                "out": v["out"],
+                "returncode": v["returncode"],
+                "kind": v.get("kind", "generate"),
+            }
             for k, v in RUNS.items()
         ]
     }
@@ -257,6 +282,7 @@ def run_status(rid: str) -> dict:
         "status": v["status"],
         "returncode": v["returncode"],
         "out": v["out"],
+        "kind": v.get("kind", "generate"),
         "log": list(v["log"])[-400:],
     }
 
@@ -321,6 +347,18 @@ async def ws_run(ws: WebSocket, rid: str):
 # --------------------------------------------------------------------------- #
 # segmentation tuner                                                          #
 # --------------------------------------------------------------------------- #
+def _seg_check_limits(n: int) -> tuple[int, int]:
+    """Map the tuner's ``# seeds`` to ``(scan_limit, check_seeds)``.
+
+    ``n >= 1`` samples exactly N sources and renders those N. ``n <= 0`` means the whole
+    dataset: ``scan_limit=0`` segments every source (so the report covers the full
+    dataset), and the gallery renders up to ``SEG_CHECK_GALLERY_CAP`` cut-outs so a large
+    dataset can't flood the browser."""
+    if n <= 0:
+        return 0, SEG_CHECK_GALLERY_CAP
+    return n, n
+
+
 @app.post("/api/seg/check")
 async def seg_check(req: SegCheckRequest) -> dict:
     """Launch a tracked, stoppable segmentation check (a tuner run that produces no
@@ -328,12 +366,24 @@ async def seg_check(req: SegCheckRequest) -> dict:
     cancelled via ``/api/runs/{run_id}/stop``, and the results (report + per-seed
     manifest) are read afterwards from ``/api/seg/result``.
 
-    ``n`` caps how many sources are actually segmented (``scan_limit``) AND how many
-    cut-outs render — so the report counts and the gallery both reflect exactly N."""
+    ``n >= 1`` samples exactly N sources (``scan_limit``) and renders those N cut-outs —
+    report counts and gallery both reflect that sample. ``n <= 0`` means *whole dataset*:
+    segment every source (``scan_limit=0``) so the report covers the full dataset, and
+    render the gallery up to ``SEG_CHECK_GALLERY_CAP`` cut-outs so the browser stays
+    responsive on large datasets (the report still counts all sources).
+
+    Each check renders into its OWN output dir (a fresh temp dir unless ``out`` is given),
+    so a prior check's cut-outs can never bleed into this one's gallery; these private dirs
+    are reaped when their run record is evicted. The seg CACHE is shared (warm re-checks)."""
     cfg = dict(req.config)
-    n = max(1, int(req.n))
-    out = _safe(req.out or str(TMP / "msg_segcheck"))
-    cfg.update({"out": str(out), "num_images": 0, "check_seeds": n, "scan_limit": n})
+    scan_limit, check_seeds = _seg_check_limits(int(req.n))
+    # Isolated per-check output: a shared dir let a prior run's stale cut-outs leak in.
+    out = (
+        _safe(req.out) if req.out else Path(tempfile.mkdtemp(prefix="msg_segcheck_", dir=str(TMP)))
+    )
+    cfg.update(
+        {"out": str(out), "num_images": 0, "check_seeds": check_seeds, "scan_limit": scan_limit}
+    )
     cfg.setdefault("cache_dir", str(TMP / "msg_segcache"))  # warm across re-checks
     rid = await _launch(cfg, label="seg")
     return {"run_id": rid, "out": RUNS[rid]["out"]}

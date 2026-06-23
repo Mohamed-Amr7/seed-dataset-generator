@@ -18,13 +18,16 @@ fully-commented config that exercises every option lives at
 | Mixed-seed false positives | `class_balanced` + many classes per scene; `neg_frac` | scenes mix all classes; background-only negatives suppress texture false positives. |
 | **Data leakage (train↔val)** | `split.val_seed_holdout`, `split.val_seeds` | **a source seed reserved for val never appears in any train image** (per-class stratified, deterministic). |
 | Binary-classification limitation | `export.multilabel_csv` | per-image multi-label CSV (per-class counts) for downstream classifier training. |
-| Provenance / traceability | `export.extra_annotations`, `provenance` | COCO annotations carry source file, scale, rotation, shear and seg method. |
+| Provenance / traceability | `export.extra_annotations`, `provenance` | COCO annotations carry source file, scale, rotation, shear, perspective and seg method. |
 
 > Geometric augmentations that would move a label box at the scene level (scene-wide
-> shear / perspective) are intentionally avoided to keep annotations exact. Per-seed
-> shear (`augmentation.shear`) is applied to the cut-out *before* placement, so the
-> box is recomputed from the warped alpha and stays correct. (The `perspective` /
-> `--perspective` knob is consequently **reserved — not currently applied**; leave it at `0`.)
+> shear / perspective) are intentionally avoided to keep annotations exact. The per-seed
+> equivalents — shear (`augmentation.shear`) and perspective (`augmentation.perspective` /
+> `--perspective`) — are instead applied to the cut-out *before* placement, so the box is
+> recomputed from the warped alpha and stays correct. `--perspective` takes the max corner
+> jitter as a fraction of the cut-out, **range `0`–`0.3`** (it is a fraction, not degrees/pixels
+> — an out-of-range value is rejected to avoid a runaway warp buffer); `0.1` is a sane value.
+> Leave it at `0` to disable.
 
 ## Segmentation methods
 

@@ -69,7 +69,7 @@ def write_data_yaml(out: Path, class_names: list[str]) -> None:
 def _extra_annotation(pv: dict) -> dict:
     """Flatten one provenance entry into a COCO `extra_annotations` payload: the
     source seed file, the segmentation method that cut it out, and the per-placement
-    transform (scale/rotation/shear + original cut-out dims)."""
+    transform (scale/rotation/shear/perspective + original cut-out dims)."""
     t = pv.get("transform") or {}
     return {
         "source": pv.get("source"),
@@ -78,6 +78,7 @@ def _extra_annotation(pv: dict) -> dict:
         "scale": t.get("scale"),
         "rotation": t.get("rotation"),
         "shear": t.get("shear"),
+        "perspective": t.get("perspective"),
         "orig_w": t.get("orig_w"),
         "orig_h": t.get("orig_h"),
     }

@@ -9,6 +9,9 @@ TestClient drives the ASGI app in-process.
 from __future__ import annotations
 
 import importlib
+import shutil
+import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -96,6 +99,66 @@ def test_runs_list_returns_runs_collection(client):
     r = client.get("/api/runs")
     assert r.status_code == 200
     assert isinstance(r.json()["runs"], list)
+
+
+def test_runs_list_reports_kind(client):
+    """Each run carries a `kind` ('generate'|'segment') so the UI can hide the
+    'Browse dataset' hand-off for tuner checks (which produce no dataset)."""
+    _webapp.RUNS["seg-test"] = {
+        "status": "done",
+        "out": "/tmp/x",
+        "returncode": 0,
+        "kind": "segment",
+        "log": [],
+    }
+    _webapp.RUNS["run-test"] = {
+        "status": "done",
+        "out": "/tmp/y",
+        "returncode": 0,
+        "kind": "generate",
+        "log": [],
+    }
+    try:
+        runs = {r["id"]: r for r in client.get("/api/runs").json()["runs"]}
+        assert runs["seg-test"]["kind"] == "segment"
+        assert runs["run-test"]["kind"] == "generate"
+    finally:
+        _webapp.RUNS.pop("seg-test", None)
+        _webapp.RUNS.pop("run-test", None)
+
+
+@pytest.mark.parametrize(
+    "n, expected",
+    [
+        (24, (24, 24)),  # sample exactly N: scan N, render N
+        (1, (1, 1)),
+        (0, (0, _webapp.SEG_CHECK_GALLERY_CAP)),  # whole dataset: scan all, render capped
+        (-5, (0, _webapp.SEG_CHECK_GALLERY_CAP)),
+    ],
+)
+def test_seg_check_limits_whole_dataset(n, expected):
+    """`# seeds` <= 0 means whole-dataset: scan every source (scan_limit=0) for a full
+    report, render up to the gallery cap. A positive N scans and renders exactly N."""
+    assert _webapp._seg_check_limits(n) == expected
+
+
+def test_reap_seg_dir_isolates_and_cleans():
+    """Per-check private output dirs (TMP/msg_segcheck_*) are reaped when their run is
+    evicted, so a prior check's stale cut-outs can't leak into a later one. An explicit
+    user `out` and non-segment runs are never touched."""
+    d_seg = tempfile.mkdtemp(prefix="msg_segcheck_", dir=str(_webapp.TMP))
+    d_gen = tempfile.mkdtemp(prefix="msg_segcheck_", dir=str(_webapp.TMP))
+    d_user = tempfile.mkdtemp(prefix="user_out_", dir=str(_webapp.TMP))
+    try:
+        _webapp._reap_seg_dir({"kind": "segment", "out": d_seg})
+        assert not Path(d_seg).exists()  # our seg temp dir is removed
+        _webapp._reap_seg_dir({"kind": "generate", "out": d_gen})
+        assert Path(d_gen).exists()  # a generate run's out is left alone
+        _webapp._reap_seg_dir({"kind": "segment", "out": d_user})
+        assert Path(d_user).exists()  # an explicit, non-prefixed out is left alone
+    finally:
+        for d in (d_seg, d_gen, d_user):
+            shutil.rmtree(d, ignore_errors=True)
 
 
 def test_fs_list_respects_kind_filter(client, tmp_path):

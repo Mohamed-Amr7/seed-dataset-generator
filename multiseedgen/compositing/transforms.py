@@ -39,6 +39,26 @@ def _shear(rgba: np.ndarray, shear_deg: float) -> np.ndarray:
     return cv2.warpAffine(rgba, m, (nw, h), flags=cv2.INTER_LINEAR, borderValue=(0, 0, 0, 0))
 
 
+def _perspective(rgba: np.ndarray, jit: np.ndarray) -> np.ndarray:
+    """Random perspective warp of a BGRA cut-out, expanding the canvas so the warped
+    quad is never clipped (transparent border). ``jit`` is a (4, 2) array of fractional
+    corner offsets (dx as a frac of w, dy as a frac of h) for the TL, TR, BR, BL corners.
+    Applied before placement so the label box is recomputed from the warped alpha and
+    stays correct (mirrors :func:`_shear`)."""
+    h, w = rgba.shape[:2]
+    src = np.array([[0, 0], [w, 0], [w, h], [0, h]], dtype=np.float32)
+    dst = src + jit * np.array([w, h], dtype=np.float32)
+    dst -= dst.min(axis=0, keepdims=True)  # shift the warped quad into the +,+ quadrant
+    # Output size grows with the corner jitter; Config caps `perspective` at 0.3 (worst
+    # case ~1.6x the input), so this safety clamp never fires for a validated run - it only
+    # stops a direct call with an out-of-range jit from allocating a giant buffer (OOM).
+    cap = 4 * max(h, w)
+    nw = min(cap, max(1, int(np.ceil(float(dst[:, 0].max())))))
+    nh = min(cap, max(1, int(np.ceil(float(dst[:, 1].max())))))
+    m = cv2.getPerspectiveTransform(src, dst.astype(np.float32))
+    return cv2.warpPerspective(rgba, m, (nw, nh), flags=cv2.INTER_LINEAR, borderValue=(0, 0, 0, 0))
+
+
 def _jitter(rgba: np.ndarray, cfg: Config, rng: np.random.Generator) -> np.ndarray:
     rgb = rgba[..., :3]
     hsv = cv2.cvtColor(rgb, cv2.COLOR_BGR2HSV).astype(np.float32)
@@ -75,10 +95,14 @@ def transform_seed(
     if cfg.aug_shear > 0:  # draw only when enabled (keeps
         shear = float(rng.uniform(-cfg.aug_shear, cfg.aug_shear))  # legacy streams stable)
         rgba = _shear(rgba, shear)
+    persp = None
+    if cfg.perspective > 0:  # one 8-value draw, gated like shear so OFF consumes none
+        persp = rng.uniform(-cfg.perspective, cfg.perspective, size=(4, 2)).astype(np.float32)
+        rgba = _perspective(rgba, persp)
     if cfg.jitter_hue or cfg.jitter_sat or cfg.jitter_val:
         rgba = _jitter(rgba, cfg, rng)
     if record:
-        return rgba, {
+        rec = {
             "scale": round(float(scale_frac), 4),
             "flip_h": bool(flip_h),
             "flip_v": bool(flip_v),
@@ -87,4 +111,7 @@ def transform_seed(
             "orig_w": int(ow),
             "orig_h": int(oh),
         }
+        if persp is not None:  # recorded only when applied, so OFF leaves provenance bytes stable
+            rec["perspective"] = round(float(np.abs(persp).max()), 4)
+        return rgba, rec
     return rgba

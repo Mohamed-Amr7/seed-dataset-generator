@@ -122,12 +122,17 @@ export function FieldRow({
     )
   } else {
     const isPath = field.path_kind && field.widget === 'text'
+    const isNumber = field.widget === 'int' || field.widget === 'float'
     control = (
       <div className="flex gap-2">
         <Input
           id={id}
-          type={field.widget === 'int' || field.widget === 'float' ? 'number' : 'text'}
-          step={field.widget === 'float' ? 'any' : undefined}
+          type={isNumber ? 'number' : 'text'}
+          // Surface the valid window when the schema provides one (e.g. perspective 0–0.3);
+          // step falls back to 'any' for floats so partial typing still works.
+          min={isNumber ? field.min : undefined}
+          max={isNumber ? field.max : undefined}
+          step={field.step ?? (field.widget === 'float' ? 'any' : undefined)}
           value={text}
           aria-invalid={error ? true : undefined}
           onChange={(e) => onTextChange(e.target.value)}

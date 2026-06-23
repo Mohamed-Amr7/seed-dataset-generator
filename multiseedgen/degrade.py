@@ -47,8 +47,9 @@ def _apply_vignette(img: np.ndarray, strength: float) -> np.ndarray:
 def apply_degradation(canvas_f32: np.ndarray, cfg: Config, rng: np.random.Generator) -> np.ndarray:
     """Camera-matched PHOTOMETRIC degradation on the final composite (per scene).
     These never move boxes, so labels stay correct. JPEG recompression is handled
-    at save time via _jpeg_quality; geometric perspective (which WOULD move boxes)
-    is intentionally not applied here."""
+    at save time via _jpeg_quality; geometric perspective is applied per-seed before
+    placement (see transform_seed) rather than here, because a whole-canvas warp would
+    move boxes this photometric stage can't recompute."""
     img = canvas_f32
     if cfg.vignette > 0:
         img = _apply_vignette(img, cfg.vignette)

@@ -28,12 +28,22 @@ def test_minimal_config_uses_documented_defaults(make_cfg):
         (dict(scale_min=0.5, scale_max=0.1), "scale_min"),
         (dict(val_split=1.5), "val_split"),
         (dict(val_split=-0.1), "val_split"),
+        (dict(perspective=2.0), "perspective"),  # would balloon the warp buffer -> OOM
+        (dict(perspective=0.5), "perspective"),  # above the 0.3 cap
+        (dict(perspective=-0.1), "perspective"),
     ],
 )
 def test_range_and_ordering_violations_raise(make_cfg, overrides, needle):
     """Out-of-range / mis-ordered numeric fields must fail loudly, not be clamped."""
     with pytest.raises(ValidationError, match=needle):
         make_cfg(**overrides)
+
+
+@pytest.mark.parametrize("value", [0.0, 0.1, 0.3])
+def test_perspective_accepts_in_range_values(make_cfg, value):
+    """The [0, 0.3] window (incl. the 0.3 boundary) is valid; only out-of-range OOM risks
+    are rejected by :func:`test_range_and_ordering_violations_raise`."""
+    assert make_cfg(perspective=value).perspective == value
 
 
 def test_unknown_field_is_rejected(make_cfg):
@@ -60,7 +70,7 @@ def test_yolo_seg_format_implies_masks(make_cfg):
     assert cfg.masks is True
 
 
-@pytest.mark.parametrize("zero_field", ["aug_shear", "neg_frac", "blur_max_sigma"])
+@pytest.mark.parametrize("zero_field", ["aug_shear", "neg_frac", "blur_max_sigma", "perspective"])
 def test_zero_gated_knobs_are_not_coerced(make_cfg, zero_field):
     """Determinism guard: a knob left at 0 must stay exactly ``0.0`` (not ``None`` or a
     filled default). The pipeline reads these as ``> 0`` predicates that gate draws."""

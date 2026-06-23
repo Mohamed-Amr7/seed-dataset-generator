@@ -25,6 +25,13 @@ _PATH_KIND = {
     "sam_checkpoint": "file",
 }
 
+# UI range hints for numeric fields whose valid window the form should surface (min/max
+# clamp the spinner, step sets the increment). The CLI/Config validator stays the source
+# of truth for enforcement; these only make the bound visible in the input. Keyed by field.
+_RANGES = {
+    "perspective": {"min": 0.0, "max": 0.3, "step": 0.05},
+}
+
 # Production-quality overlay on top of the bare Config defaults; mirrors the
 # "Global recommendations" in docs/RECOMMENDED_SETTINGS.md so a fresh form is ready to
 # generate a quality dataset after only setting `sources` and `out`.
@@ -125,6 +132,7 @@ def build_schema() -> dict:
                 "default": _jsonable(defaults.get(dest)),
                 "path_kind": _PATH_KIND.get(dest),  # 'dir'|'file' -> render Browse…; else None
                 **info,
+                **_RANGES.get(dest, {}),  # min/max/step for fields with a surfaced range
             }
         )
     # any Config field with no CLI flag -> a generic group

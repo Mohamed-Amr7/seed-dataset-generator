@@ -14,6 +14,11 @@ export interface SchemaField {
   help: string
   flag: string
   path_kind: PathKind
+  // Optional UI range hints for numeric inputs (present only for fields the backend
+  // surfaces a window for, e.g. perspective). The backend stays the enforcement source.
+  min?: number
+  max?: number
+  step?: number
 }
 
 export interface SchemaGroup {
@@ -38,12 +43,15 @@ export interface StartRunResponse {
 }
 
 export type RunStatus = 'running' | 'done' | 'error'
+export type RunKind = 'generate' | 'segment'
 
 export interface RunSummary {
   id: string
   status: RunStatus
   out: string
   returncode: number | null
+  // 'segment' = a tuner check (no browsable dataset); 'generate' = a real run.
+  kind: RunKind
 }
 
 export interface RunDetail extends RunSummary {

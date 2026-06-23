@@ -262,6 +262,18 @@
         },
         {
           "choices": null,
+          "default": 0.0,
+          "flag": "--perspective",
+          "help": "max per-seed perspective corner jitter as a fraction of the cut-out, 0-0.3 (0 = off, 0.1 is a sane value); applied pre-label so boxes stay correct",
+          "max": 0.3,
+          "min": 0.0,
+          "name": "perspective",
+          "path_kind": null,
+          "step": 0.05,
+          "widget": "float"
+        },
+        {
+          "choices": null,
           "default": true,
           "flag": "--no-flip",
           "help": "",
@@ -799,15 +811,6 @@
           "flag": "--vignette",
           "help": "synthetic vignette strength on the composite (needs --degrade)",
           "name": "vignette",
-          "path_kind": null,
-          "widget": "float"
-        },
-        {
-          "choices": null,
-          "default": 0.0,
-          "flag": "--perspective",
-          "help": "max corner jitter as fraction of canvas; OFF by default. Applied pre-label with boxes transformed",
-          "name": "perspective",
           "path_kind": null,
           "widget": "float"
         }

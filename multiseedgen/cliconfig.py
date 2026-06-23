@@ -117,6 +117,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="max per-seed shear in degrees (0 = off); applied pre-label "
         "on the cut-out so boxes stay correct",
     )
+    g.add_argument(
+        "--perspective",
+        type=float,
+        default=0.0,
+        help="max per-seed perspective corner jitter as a fraction of the cut-out, "
+        "0-0.3 (0 = off, 0.1 is a sane value); applied pre-label so boxes stay correct",
+    )
     g.add_argument("--no-flip", dest="flip", action="store_false")
     g.add_argument("--jitter-hue", type=float, default=5.0)
     g.add_argument("--jitter-sat", type=float, default=0.15)
@@ -221,13 +228,6 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.0,
         help="synthetic vignette strength on the composite (needs --degrade)",
-    )
-    g.add_argument(
-        "--perspective",
-        type=float,
-        default=0.0,
-        help="max corner jitter as fraction of canvas; OFF by default. "
-        "Applied pre-label with boxes transformed",
     )
 
     g = p.add_argument_group("segmentation")
@@ -541,6 +541,7 @@ _NESTED_MAP: dict[str, Any] = {
     "augmentation": {
         "gamma": "aug_gamma",
         "shear": "aug_shear",
+        "perspective": "perspective",
         "rotation": "max_rotation",
         "max_rotation": "max_rotation",
         "flip": "flip",

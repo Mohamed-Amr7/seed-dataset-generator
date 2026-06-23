@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { ApiError } from '@/api/client'
 import { loadConfig, saveConfig } from '@/api/endpoints'
+import { useSchema } from '@/api/queries'
 import { cleanConfig, useConfigStore } from '@/store/configStore'
 import { usePickerStore } from '@/store/pickerStore'
 import { toast } from '@/store/toastStore'
@@ -15,7 +16,12 @@ export function ConfigTab() {
   const config = useConfigStore((s) => s.config)
   const setMany = useConfigStore((s) => s.setMany)
   const openPicker = usePickerStore((s) => s.openPicker)
+  const { data: schema } = useSchema()
   const [path, setPath] = useState('')
+  // Config files live with the project (configs/*.yaml), not the data root - so default the
+  // browser there rather than letting it fall back to DATA_ROOT (often /tmp). fs/list climbs
+  // to the project root if `configs/` doesn't exist.
+  const configDir = schema ? `${schema.project_root}/configs` : null
 
   const saveMut = useMutation({
     mutationFn: () => saveConfig(path.trim(), cleanConfig(config)),
@@ -51,7 +57,7 @@ export function ConfigTab() {
             id="cfg-path"
             value={path}
             onChange={(e) => setPath(e.target.value)}
-            placeholder="/tmp/run_config.yaml"
+            placeholder="configs/run_config.yaml"
           />
           <Button
             type="button"
@@ -62,7 +68,7 @@ export function ConfigTab() {
               openPicker({
                 kind: 'file',
                 fieldName: 'config path',
-                initialPath: path || null,
+                initialPath: path || configDir,
                 onSelect: setPath,
               })
             }

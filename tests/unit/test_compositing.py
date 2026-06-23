@@ -20,7 +20,7 @@ from multiseedgen.compositing.backgrounds import (
 )
 from multiseedgen.compositing.blend import _iou
 from multiseedgen.compositing.scene import generate_scene
-from multiseedgen.compositing.transforms import transform_seed
+from multiseedgen.compositing.transforms import _perspective, transform_seed
 
 
 # --------------------------------------------------------------------------- #
@@ -77,6 +77,52 @@ def test_transform_seed_record_does_not_perturb_pixels(make_cfg, seed_cutout):
     assert np.array_equal(plain, recorded)
     assert set(params) >= {"scale", "flip_h", "flip_v", "rotation", "shear"}
     assert cfg.scale_min <= params["scale"] <= cfg.scale_max
+
+
+def test_perspective_off_consumes_no_draw(make_cfg, seed_cutout):
+    """The perspective draw is gated on ``cfg.perspective > 0``: at the default 0 it
+    must consume nothing, so a perspective=0 stream is byte-identical to one where the
+    field doesn't exist. This is the legacy-determinism contract for the new branch."""
+    off = transform_seed(seed_cutout, make_cfg(), 64, np.random.default_rng(3))
+    base = transform_seed(seed_cutout, make_cfg(perspective=0.0), 64, np.random.default_rng(3))
+    assert np.array_equal(off, base)
+
+
+def test_perspective_warps_and_is_deterministic(make_cfg, seed_cutout):
+    """Enabling perspective changes the cut-out (it is actually applied) and stays
+    byte-identical for a fixed (config, seed)."""
+    cfg = make_cfg(perspective=0.3)
+    plain = transform_seed(seed_cutout, make_cfg(), 64, np.random.default_rng(11))
+    a = transform_seed(seed_cutout, cfg, 64, np.random.default_rng(11))
+    b = transform_seed(seed_cutout, cfg, 64, np.random.default_rng(11))
+    assert np.array_equal(a, b)  # deterministic
+    assert a.shape != plain.shape or not np.array_equal(a, plain)  # actually warped
+
+
+def test_perspective_recorded_only_when_applied(make_cfg, seed_cutout):
+    """``record=True`` adds a ``perspective`` key iff perspective is enabled, so OFF
+    runs leave provenance bytes unchanged. The recorded value is a non-negative jitter
+    magnitude bounded by the configured strength."""
+    _, off = transform_seed(seed_cutout, make_cfg(), 64, np.random.default_rng(11), record=True)
+    assert "perspective" not in off
+
+    rgba, on = transform_seed(
+        seed_cutout, make_cfg(perspective=0.3), 64, np.random.default_rng(11), record=True
+    )
+    plain = transform_seed(seed_cutout, make_cfg(perspective=0.3), 64, np.random.default_rng(11))
+    assert np.array_equal(plain, rgba)  # record must not perturb pixels
+    assert 0.0 <= on["perspective"] <= 0.3
+
+
+def test_perspective_output_size_is_bounded(seed_cutout):
+    """Regression: an out-of-range jit (the config gate normally rejects this) must not
+    allocate an unbounded buffer - the freeze/OOM mode. The helper caps output at 4x the
+    input's longer side, so even an absurd jit stays small."""
+    rgba = seed_cutout.rgba
+    huge = np.full((4, 2), 50.0, np.float32)  # 50x the cut-out - would be GBs uncapped
+    out = _perspective(rgba, huge)
+    cap = 4 * max(rgba.shape[:2])
+    assert max(out.shape[:2]) <= cap
 
 
 # --------------------------------------------------------------------------- #

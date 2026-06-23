@@ -27,13 +27,16 @@ export function RunTab({ schema, socket }: { schema: FormSchema; socket: RunSock
   const validation = validateRunConfig(config)
   const running = socket.status === 'running'
 
-  // The active run's output dir, looked up from the run list (single source of truth for
-  // `out`). Drives the "Browse dataset" hand-off once a generation finishes.
+  // The active run, looked up from the run list (single source of truth for `out`/`kind`).
+  // `out` drives the "Browse dataset" hand-off; `kind` hides it for segmentation checks,
+  // which produce no browsable dataset (only checkerboard previews).
   const { data: runsData } = useRuns(running ? 2000 : false)
-  const activeOut = useMemo(
-    () => runsData?.runs.find((r) => r.id === socket.runId)?.out ?? null,
+  const activeRun = useMemo(
+    () => runsData?.runs.find((r) => r.id === socket.runId) ?? null,
     [runsData, socket.runId],
   )
+  const activeOut = activeRun?.out ?? null
+  const isSegRun = activeRun?.kind === 'segment'
 
   const startMut = useMutation({
     mutationFn: () => startRun(cleanConfig(config)),
@@ -114,7 +117,7 @@ export function RunTab({ schema, socket }: { schema: FormSchema; socket: RunSock
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold">Run log</h2>
           <StatusBadge status={socket.status} />
-          {socket.status === 'done' && activeOut && (
+          {socket.status === 'done' && activeOut && !isSegRun && (
             <Button
               variant="outline"
               size="sm"
