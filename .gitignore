@@ -36,3 +36,10 @@ _uitest/
 # Model checkpoints (large; downloaded on demand, e.g. SAM)
 models/
 *.pth
+
+# Frontend (Node) — source lives in frontend/, build output is committed to
+# multiseedgen/web/static/ (so pip/Docker need no Node). Only ignore Node's local state.
+frontend/node_modules/
+frontend/coverage/
+frontend/.vite/
+frontend/**/*.tsbuildinfo

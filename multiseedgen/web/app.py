@@ -21,21 +21,32 @@ import json
 import os
 import sys
 import tempfile
+import zipfile
 from collections import deque
 from pathlib import Path
 from typing import Literal
 
 import cv2
 import numpy as np
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, Response
+from fastapi import (
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.background import BackgroundTask
 
 from ..cliconfig import _load_config_file
 from ..errors import ConfigError
 from ..models import Config
 from ..optdeps import yaml
-from .schemas import ConfigSaveRequest, SegCheckRequest, StartRunRequest
+from .schemas import ConfigSaveRequest, SegCheckRequest, StartRunRequest, UploadResponse
 from .services import _jsonable, build_schema
 
 ROOT = Path(__file__).resolve().parents[2]  # the MultiSeedGen project dir
@@ -52,6 +63,8 @@ ALLOWED_BASES = [ROOT, DATA_ROOT, TMP]
 LOG_MAXLINES = 4000  # bounded per-run log ring buffer
 RUNS_MAX = 40  # cap retained runs (evict oldest finished)
 _DATASET_SCAN_DEPTH = 6  # max directory depth when discovering datasets (bounds the walk)
+_UPLOAD_EXTS = {".png", ".jpg", ".jpeg"}  # seed-upload allowlist (also content-sniffed)
+_UPLOAD_MAX_BYTES = 25 * 1024 * 1024  # 25 MB per uploaded seed image
 
 app = FastAPI(title="MultiSeedGen")
 RUNS: dict = {}  # run_id -> state dict
@@ -520,6 +533,48 @@ def dataset_image(path: str, split: Literal["train", "val"] = "train", idx: int 
     )
 
 
+@app.get("/api/datasets/download")
+def dataset_download(path: str = Query(...), split: str | None = None) -> FileResponse:
+    """Stream a generated dataset (or a single split) back to the browser as a .zip.
+
+    Sandboxed via _safe(); os.walk does not follow symlinks, and dotfiles/dotdirs
+    (e.g. .seg_cache) are pruned so the archive stays to the exported artifacts.
+    """
+    d = _safe(path)
+    if not d.is_dir():
+        raise HTTPException(404, "no such dataset")
+    if split not in (None, "train", "val"):
+        raise HTTPException(400, "split must be 'train' or 'val'")
+    subtree = (d / split) if split else d
+    if not subtree.is_dir():
+        raise HTTPException(404, f"no '{split}' split in dataset")
+
+    fd, name = tempfile.mkstemp(suffix=".zip", prefix="msg_dl_")
+    os.close(fd)
+    zip_path = Path(name)
+    try:
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for dirpath, dirnames, files in os.walk(subtree):
+                dirnames[:] = sorted(n for n in dirnames if not n.startswith("."))
+                for fn in sorted(files):
+                    if fn.startswith("."):
+                        continue
+                    fp = Path(dirpath) / fn
+                    # keep the dataset folder name as the archive root so it unzips tidily
+                    zf.write(fp, arcname=str(Path(d.name) / fp.relative_to(d)))
+    except OSError as e:
+        zip_path.unlink(missing_ok=True)
+        raise HTTPException(500, f"could not build archive: {e}") from e
+
+    fname = f"{d.name}{('_' + split) if split else ''}.zip"
+    return FileResponse(
+        zip_path,
+        media_type="application/zip",
+        filename=fname,
+        background=BackgroundTask(zip_path.unlink, missing_ok=True),
+    )
+
+
 @app.get("/api/fs/list")
 def fs_list(path: str | None = None, kind: str = "dir") -> dict:
     """List directory entries for the form's path picker, sandboxed to ALLOWED_BASES.
@@ -574,6 +629,48 @@ def serve_file(path: str = Query(...)) -> Response:
     return Response(
         content=p.read_bytes(), media_type=media.get(ext.lstrip("."), "application/octet-stream")
     )
+
+
+# --------------------------------------------------------------------------- #
+# seed upload                                                                 #
+# --------------------------------------------------------------------------- #
+@app.post("/api/seeds/upload")
+async def upload_seeds(
+    dest: str = Form(...),
+    files: list[UploadFile] = File(...),
+) -> UploadResponse:
+    """Save uploaded seed images into a sandboxed folder usable as ``sources``.
+
+    Each file is validated three ways: the destination is forced under an allowed root
+    (_safe), the extension must be in the allowlist, and the bytes must actually decode
+    as an image (cv2) — a stronger check than trusting the client's content-type. Reads
+    are size-bounded so a huge upload can't exhaust memory.
+    """
+    d = _safe(dest)
+    if d.exists() and not d.is_dir():
+        raise HTTPException(400, "destination exists and is not a directory")
+    d.mkdir(parents=True, exist_ok=True)
+
+    saved: list[str] = []
+    for uf in files:
+        fname = Path(uf.filename or "").name  # strip any path components from the name
+        if not fname:
+            continue
+        if Path(fname).suffix.lower() not in _UPLOAD_EXTS:
+            raise HTTPException(400, f"unsupported file type: {fname} (allowed: png/jpg/jpeg)")
+        data = await uf.read(_UPLOAD_MAX_BYTES + 1)
+        if len(data) > _UPLOAD_MAX_BYTES:
+            raise HTTPException(
+                413, f"file too large: {fname} (max {_UPLOAD_MAX_BYTES // (1024 * 1024)} MB)"
+            )
+        if cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR) is None:
+            raise HTTPException(400, f"not a decodable image: {fname}")
+        (d / fname).write_bytes(data)
+        saved.append(fname)
+
+    if not saved:
+        raise HTTPException(400, "no valid image files uploaded")
+    return UploadResponse(saved_dir=str(d), files=saved, count=len(saved))
 
 
 # --------------------------------------------------------------------------- #

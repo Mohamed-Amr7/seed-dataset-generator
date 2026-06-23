@@ -17,3 +17,22 @@ repos:
       - id: check-merge-conflict
       - id: check-added-large-files
         args: [--maxkb=2048]   # block accidental dataset/model/image commits
+        exclude: ^multiseedgen/web/static/   # the committed JS bundle can exceed the cap
+
+  # Frontend (Node) hooks. These need a local Node toolchain + `npm ci` in frontend/;
+  # they run the same Prettier/ESLint gate CI does. Skipped automatically if no frontend
+  # files are touched. CI remains the authoritative gate.
+  - repo: local
+    hooks:
+      - id: frontend-prettier
+        name: prettier (frontend)
+        language: system
+        entry: bash -c 'cd frontend && npx prettier --check .'
+        files: ^frontend/.*\.(ts|tsx|css|json)$
+        pass_filenames: false
+      - id: frontend-eslint
+        name: eslint (frontend)
+        language: system
+        entry: bash -c 'cd frontend && npm run lint'
+        files: ^frontend/.*\.(ts|tsx)$
+        pass_filenames: false

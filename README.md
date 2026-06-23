@@ -40,7 +40,8 @@ multiseedgen/
   compositing/                           transforms / backgrounds / blend / scene assembly
   degrade.py export.py qa.py             degradation, YOLO/COCO writers, QA charts
   pipeline.py                            deterministic per-scene workers + run() driver
-  web/                                   FastAPI backend (app/schemas/services) + static UI
+  web/                                   FastAPI backend (app/schemas/services) + built SPA (static/)
+frontend/                                React + TS + Tailwind source for the web UI (builds into static/)
 ```
 
 See [`docs/architecture.md`](docs/architecture.md) for the annotated tree and data flow.

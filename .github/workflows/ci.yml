@@ -44,3 +44,28 @@ jobs:
       # config/seg-cache/schema contracts) are environment-portable.
       - name: Pytest
         run: pytest -m "not golden and not gpu" -v
+
+  frontend:
+    name: Frontend (lint, types, tests, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: ESLint
+        run: npm run lint
+      - name: Type-check
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm run test
+      # Rebuilds the committed multiseedgen/web/static/ assets to prove source <-> artifact
+      # stay in sync (a stale committed build would change tracked files here).
+      - name: Build
+        run: npm run build

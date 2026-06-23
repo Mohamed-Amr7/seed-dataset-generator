@@ -1,0 +1,4 @@
+node_modules
+coverage
+../multiseedgen/web/static
+package-lock.json

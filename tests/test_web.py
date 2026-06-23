@@ -145,5 +145,120 @@ def test_dataset_image_404_when_no_images(client, tmp_path):
     assert r.status_code == 404
 
 
+# --------------------------------------------------------------------------- #
+# Dataset download (new): zip a dataset / split, sandboxed                     #
+# --------------------------------------------------------------------------- #
+def _make_dataset(root):
+    import cv2
+    import numpy as np
+
+    for split in ("train", "val"):
+        (root / split / "images").mkdir(parents=True)
+        (root / split / "labels").mkdir(parents=True)
+        cv2.imwrite(str(root / split / "images" / "a.jpg"), np.full((16, 16, 3), 128, np.uint8))
+        (root / split / "labels" / "a.txt").write_text("0 0.5 0.5 0.2 0.2\n")
+    (root / "data.yaml").write_text("names: [seed]\n")
+    (root / ".seg_cache").mkdir()  # dotdir must be excluded from the archive
+    (root / ".seg_cache" / "junk.bin").write_bytes(b"\x00")
+
+
+def test_dataset_download_zips_full_dataset(client, tmp_path):
+    import io
+    import zipfile
+
+    ds = tmp_path / "mydataset"
+    _make_dataset(ds)
+    r = client.get("/api/datasets/download", params={"path": str(ds)})
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/zip"
+    names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+    assert "mydataset/data.yaml" in names
+    assert "mydataset/train/images/a.jpg" in names
+    assert "mydataset/val/images/a.jpg" in names
+    assert not any(".seg_cache" in n for n in names)  # dotdirs pruned
+
+
+def test_dataset_download_single_split(client, tmp_path):
+    import io
+    import zipfile
+
+    ds = tmp_path / "ds2"
+    _make_dataset(ds)
+    r = client.get("/api/datasets/download", params={"path": str(ds), "split": "train"})
+    assert r.status_code == 200
+    names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+    assert all(n.startswith("ds2/train/") for n in names)
+    assert not any("/val/" in n for n in names)
+
+
+def test_dataset_download_rejects_traversal(client):
+    r = client.get("/api/datasets/download", params={"path": "/etc"})
+    assert r.status_code == 403
+
+
+def test_dataset_download_rejects_bad_split(client, tmp_path):
+    ds = tmp_path / "ds3"
+    _make_dataset(ds)
+    r = client.get("/api/datasets/download", params={"path": str(ds), "split": "nope"})
+    assert r.status_code == 400
+
+
+# --------------------------------------------------------------------------- #
+# Seed upload (new): multipart, sandboxed, extension + content validated       #
+# --------------------------------------------------------------------------- #
+def _png_bytes():
+    import cv2
+    import numpy as np
+
+    ok, buf = cv2.imencode(".png", np.full((8, 8, 3), 64, np.uint8))
+    assert ok
+    return buf.tobytes()
+
+
+def test_upload_seeds_happy_path(client, tmp_path):
+    dest = tmp_path / "seeds_in"
+    files = [
+        ("files", ("one.png", _png_bytes(), "image/png")),
+        ("files", ("two.jpg", _png_bytes(), "image/jpeg")),
+    ]
+    r = client.post("/api/seeds/upload", data={"dest": str(dest)}, files=files)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["count"] == 2
+    assert set(body["files"]) == {"one.png", "two.jpg"}
+    assert (dest / "one.png").exists() and (dest / "two.jpg").exists()
+
+
+def test_upload_seeds_rejects_outside_sandbox(client):
+    files = [("files", ("x.png", _png_bytes(), "image/png"))]
+    r = client.post("/api/seeds/upload", data={"dest": "/etc/evil"}, files=files)
+    assert r.status_code == 403
+
+
+def test_upload_seeds_rejects_bad_extension(client, tmp_path):
+    files = [("files", ("evil.exe", b"MZ\x90\x00", "application/octet-stream"))]
+    r = client.post("/api/seeds/upload", data={"dest": str(tmp_path / "s")}, files=files)
+    assert r.status_code == 400
+    assert "unsupported file type" in r.text
+
+
+def test_upload_seeds_rejects_non_decodable_image(client, tmp_path):
+    # right extension, but the bytes are not a real image -> content sniff rejects it
+    files = [("files", ("fake.png", b"not really a png", "image/png"))]
+    r = client.post("/api/seeds/upload", data={"dest": str(tmp_path / "s2")}, files=files)
+    assert r.status_code == 400
+    assert "decodable" in r.text
+
+
+def test_upload_seeds_strips_path_components(client, tmp_path):
+    # a malicious filename with traversal must be reduced to its base name
+    dest = tmp_path / "s3"
+    files = [("files", ("../../escape.png", _png_bytes(), "image/png"))]
+    r = client.post("/api/seeds/upload", data={"dest": str(dest)}, files=files)
+    assert r.status_code == 200
+    assert (dest / "escape.png").exists()
+    assert not (tmp_path / "escape.png").exists()
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

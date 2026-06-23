@@ -31,3 +31,11 @@ class ConfigSaveRequest(BaseModel):
 
     path: str | None = None
     config: dict = Field(default_factory=dict)
+
+
+class UploadResponse(BaseModel):
+    """Response for POST /api/seeds/upload (the seed-image uploader)."""
+
+    saved_dir: str  # absolute path of the (sandboxed) folder the seeds landed in
+    files: list[str]  # base names of the images that were written
+    count: int

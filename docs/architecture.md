@@ -30,11 +30,22 @@ multiseedgen/
   export.py          YOLO / YOLO-seg / COCO writers, data.yaml, run manifest
   qa.py              QA charts, montages, annotated previews, seed checker
   pipeline.py        run(): load → stage → per-scene workers → export → summary
-  web/               FastAPI backend
-    app.py           routes (thin)
-    schemas.py       typed request models
+  web/               FastAPI backend + built SPA
+    app.py           routes (thin): schema, runs (+WS), seg/check, datasets, fs, upload, download
+    schemas.py       typed request/response models
     services.py      form-schema builder + preset loader
+    static/          compiled web UI (generated from frontend/; committed, served by FastAPI)
+frontend/            React + TS + Tailwind v4 + Radix UI source for the web UI (Vite)
+  src/api/           typed client + endpoints + TanStack Query hooks
+  src/store/         Zustand stores (working config, picker, toasts)
+  src/components/    UI primitives (ui/) + SchemaForm, PathPicker, DatasetViewer, …
+  src/features/      the four tabs (Run, Seg tuner, Browser, Config)
 ```
+
+The web UI is a single-page app: the FastAPI layer is a thin, sandboxed wrapper over the
+same CLI/pipeline (it launches `python -m multiseedgen` as a subprocess and streams its
+log over a websocket). The frontend builds into `web/static/` (committed) so the package
+runs without a Node toolchain; see [contributing.md](contributing.md) for the dev loop.
 
 `seedgen.py` (repo root) is a backward-compat shim re-exporting the package API so
 `python seedgen.py …` and `from seedgen import Config` keep working.

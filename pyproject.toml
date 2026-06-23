@@ -49,8 +49,13 @@ rembg = ["rembg", "onnxruntime"]
 # Optional Segment Anything backend (--segment sam). torch has no manylinux+CUDA pin
 # here; install a CUDA torch from the pytorch index if you want GPU SAM (see docker/Dockerfile.sam).
 sam = ["torch", "torchvision", "segment-anything"]
-# FastAPI web UI.
-web = ["fastapi>=0.110", "uvicorn[standard]>=0.27", "websockets>=11"]
+# FastAPI web UI. python-multipart backs the seed-upload endpoint (UploadFile/Form).
+web = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "websockets>=11",
+    "python-multipart>=0.0.7",
+]
 # Developer tooling.
 dev = [
     "pytest>=7.4",
@@ -70,7 +75,8 @@ Repository = "https://github.com/Mohamed-Amr7/seed-dataset-generator"
 include = ["multiseedgen*"]
 
 [tool.setuptools.package-data]
-"multiseedgen.web" = ["static/*"]
+# Recursive: the Vite build emits index.html + a hashed assets/ subdir into static/.
+"multiseedgen.web" = ["static/**/*"]
 
 # --------------------------------------------------------------------------- #
 # Tooling                                                                     #

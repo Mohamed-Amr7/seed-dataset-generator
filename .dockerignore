@@ -3,6 +3,9 @@
 # build context (mirrors .gitignore).
 .git
 .claude
+# Frontend source/toolchain: the build only needs the compiled UI, which is already
+# committed inside multiseedgen/web/static/ — never ship the Node source or deps.
+frontend/
 models/
 datasets/
 seeds/

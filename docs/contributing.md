@@ -27,12 +27,44 @@ All four must be green. The single most important check is `pytest` staying gree
 `tests/test_determinism.py` and `tests/test_golden.py`: those guard the byte-identity
 contract. A diff there means your change altered generated pixels.
 
+## Frontend (web UI)
+
+The web UI source lives in [`frontend/`](../frontend) (React + TypeScript + Vite +
+Tailwind v4 + Radix UI). It builds into `multiseedgen/web/static/`, and **that built output
+is committed** so `pip install` / Docker need no Node toolchain. Node 22 LTS (see
+`frontend/.nvmrc`).
+
+Dev loop — run the backend and the Vite dev server side by side (Vite proxies `/api` +
+`/ws` to `:8000`, so there's no CORS to configure):
+
+```bash
+multiseedgen-web                 # backend on :8000 (terminal 1)
+cd frontend && npm ci && npm run dev   # UI on :5173, hot-reload (terminal 2)
+```
+
+Frontend gate (what CI's `frontend` job runs — all must be green):
+
+```bash
+cd frontend
+npm run lint           # ESLint (typescript-eslint, react-hooks, jsx-a11y)
+npm run typecheck      # tsc --noEmit (strict)
+npm run test           # Vitest + Testing Library
+npm run format:check   # Prettier
+npm run build          # tsc + vite build -> ../multiseedgen/web/static (commit the result)
+```
+
+After any UI change, **run `npm run build` and commit the regenerated
+`multiseedgen/web/static/` assets** alongside your source change — CI rebuilds and a stale
+bundle will surface as a tracked-file diff. (`frontend/.npmrc` sets `legacy-peer-deps` so
+`npm ci` resolves the one plugin whose peer range trails ESLint 10.)
+
 ## Tests
 
 | Location | Scope | Speed |
 |----------|-------|-------|
 | `tests/unit/` | isolated single-function units | sub-second |
 | `tests/` | integration & contract (determinism, golden, config/schema/cache snapshots, web) | seconds |
+| `frontend/src/**/*.test.{ts,tsx}` | UI units & components (Vitest + Testing Library) | seconds |
 
 Conventions for new tests:
 
