@@ -91,7 +91,12 @@ def _match_override(rel: str, name: str, rules: list | None) -> dict | None:
 
 
 def _segment_one(
-    path_str: str, class_id: int, cfg: Config, rules: list | None, cache_dir: Path
+    path_str: str,
+    class_id: int,
+    class_name: str,
+    cfg: Config,
+    rules: list | None,
+    cache_dir: Path,
 ) -> SegResult:
     """Picklable per-file worker: hash -> cache -> imread -> segment -> store.
     Pure per-file (no shared mutable state, no RNG) so it is deterministic and
@@ -111,7 +116,15 @@ def _segment_one(
     except Exception:
         return SegResult(
             None,
-            {"skipped": True, "skip_reason": "read_error", "method": "-", "confidence": 0.0},
+            {
+                "skipped": True,
+                "skip_reason": "read_error",
+                "method": "-",
+                "confidence": 0.0,
+                "source": rel,
+                "class_id": class_id,
+                "class_name": class_name,
+            },
             rel,
             class_id,
         )
@@ -145,12 +158,20 @@ def _segment_one(
             if cfg.bg_from_sources:
                 background = extract_background(img, cfg, override)
         if cfg.use_cache:
-            _cache_store(cache_dir, key, patch, report)
+            # Persist the class on the cached entry too. The on-disk cache is content-hash
+            # keyed and class-agnostic (the same image reused across classes shares one
+            # entry), so this is a self-describing hint only; the authoritative class for
+            # this task is always re-applied below regardless of cache hit/miss.
+            _cache_store(
+                cache_dir, key, patch, {**report, "class_id": class_id, "class_name": class_name}
+            )
             if cfg.bg_from_sources:
                 _cache_store_bg(cache_dir, bg_key, background)
 
     report = dict(report or {})
     report["source"] = rel
+    report["class_id"] = class_id
+    report["class_name"] = class_name
     if override:
         report["override"] = override.get("method")
     return SegResult(patch, report, rel, class_id, background, cache_hit)
@@ -212,10 +233,30 @@ def load_seeds(cfg: Config):
     else:
         class_names = ["seed"]
         groups = [(0, sorted(root.rglob("*")))]
+        # Heads-up when a multi-type layout is silently collapsed into one class. Every
+        # seed gets class id 0 / "seed" here; subfolder names are NOT used as classes.
+        type_dirs = [
+            p
+            for p in root.iterdir()
+            if p.is_dir() and any(f.suffix.lower() in IMG_EXTS for f in p.rglob("*"))
+        ]
+        if len(type_dirs) >= 2:
+            logger.warning(
+                "class_mode=single: %d source subfolders (%s) will be merged into a single "
+                "class 'seed'. Use --class-mode subfolders to label each subfolder as its own "
+                "seed type.",
+                len(type_dirs),
+                ", ".join(sorted(p.name for p in type_dirs)[:6]),
+            )
 
     rules = _load_segment_map(cfg.segment_map) if cfg.segment_map else None
     cache_dir = cfg.cache_dir if cfg.cache_dir is not None else (cfg.out / ".seg_cache")
-    tasks = [(str(f), cid) for cid, files in groups for f in files if f.suffix.lower() in IMG_EXTS]
+    tasks = [
+        (str(f), cid, class_names[cid])
+        for cid, files in groups
+        for f in files
+        if f.suffix.lower() in IMG_EXTS
+    ]
 
     # scan_limit selects WHICH sources to segment (a quick, representative sample for the
     # tuner) — it is NOT a per-image parameter, so like max_seed_px below it must never
@@ -279,12 +320,12 @@ def load_seeds(cfg: Config):
 
     if _HAVE_JOBLIB and jobs != 1 and len(tasks) > 1:
         results: list[SegResult] = Parallel(n_jobs=jobs, backend="loky")(
-            delayed(_segment_one)(p, cid, cfg, rules, cache_dir) for p, cid in tasks
+            delayed(_segment_one)(p, cid, cname, cfg, rules, cache_dir) for p, cid, cname in tasks
         )
     else:
         results = [
-            _segment_one(p, cid, cfg, rules, cache_dir)
-            for p, cid in _tqdm(tasks, desc="segment", unit="img")
+            _segment_one(p, cid, cname, cfg, rules, cache_dir)
+            for p, cid, cname in _tqdm(tasks, desc="segment", unit="img")
         ]
 
     seeds: list[Seed] = []
@@ -359,6 +400,7 @@ def write_seg_report(out: Path, results: list[SegResult], cfg: Config) -> dict:
     out.mkdir(parents=True, exist_ok=True)
     method_counts: dict[str, int] = {}
     skip_counts: dict[str, int] = {}
+    class_counts: dict[str, int] = {}
     skipped_list = []
     confs = []
     for r in results:
@@ -371,12 +413,17 @@ def write_seg_report(out: Path, results: list[SegResult], cfg: Config) -> dict:
                     "source": rep.get("source", "?"),
                     "reason": reason,
                     "confidence": round(float(rep.get("confidence", 0.0)), 3),
+                    "class_id": rep.get("class_id"),
+                    "class_name": rep.get("class_name"),
                 }
             )
         else:
             m = rep.get("method", "?")
             method_counts[m] = method_counts.get(m, 0) + 1
             confs.append(float(rep.get("confidence", 0.0)))
+            cname = rep.get("class_name")
+            if cname is not None:
+                class_counts[cname] = class_counts.get(cname, 0) + 1
 
     bins = [0] * 10
     for c in confs:
@@ -389,6 +436,7 @@ def write_seg_report(out: Path, results: list[SegResult], cfg: Config) -> dict:
         "cache_hits": n_hit,
         "method_counts": method_counts,
         "skip_counts": skip_counts,
+        "class_counts": class_counts,
         "confidence": {
             "min": round(min(confs), 3) if confs else None,
             "mean": round(float(np.mean(confs)), 3) if confs else None,
@@ -405,6 +453,7 @@ def write_seg_report(out: Path, results: list[SegResult], cfg: Config) -> dict:
         f"  scanned {summary['scanned']}  kept {summary['kept']}  "
         f"skipped {summary['skipped']}  cache_hits {n_hit}",
         f"  by method: {method_counts}",
+        f"  kept by class: {class_counts}",
         f"  skipped by reason: {skip_counts}",
         f"  confidence min/median/mean: {summary['confidence']['min']}/"
         f"{summary['confidence']['median']}/{summary['confidence']['mean']}",

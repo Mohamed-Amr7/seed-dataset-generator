@@ -14,6 +14,10 @@ from .constants import __version__
 from .models import Config
 from .optdeps import _HAVE_YAML, yaml
 
+# COCO categories must carry a `supercategory`; with a flat (non-hierarchical) class
+# layout every seed type is grouped under this single supercategory.
+SEED_SUPERCATEGORY = "seed"
+
 
 # --------------------------------------------------------------------------- #
 # Exporters                                                                   #
@@ -66,12 +70,14 @@ def write_data_yaml(out: Path, class_names: list[str]) -> None:
     )
 
 
-def _extra_annotation(pv: dict) -> dict:
-    """Flatten one provenance entry into a COCO `extra_annotations` payload: the
-    source seed file, the segmentation method that cut it out, and the per-placement
-    transform (scale/rotation/shear/perspective + original cut-out dims)."""
+def _extra_annotation(pv: dict, class_name: str | None) -> dict:
+    """Flatten one provenance entry into a COCO `extra_annotations` payload: the seed
+    class (id + name), the source seed file, the segmentation method that cut it out, and
+    the per-placement transform (scale/rotation/shear/perspective + original cut-out dims)."""
     t = pv.get("transform") or {}
     return {
+        "class_id": pv.get("class_id"),
+        "class_name": class_name,
         "source": pv.get("source"),
         "seg_method": pv.get("seg_method"),
         "seed_index": pv.get("seed_index"),
@@ -84,7 +90,9 @@ def _extra_annotation(pv: dict) -> dict:
     }
 
 
-def _coco_ann(img_id: int, ann_id: int, label, pieces, pv, extra_annotations: bool) -> dict:
+def _coco_ann(
+    img_id: int, ann_id: int, label, pieces, pv, extra_annotations: bool, class_names: list[str]
+) -> dict:
     """Build one COCO annotation dict (shared by both passes of write_coco)."""
     cls, x0, y0, x1, y1 = label
     ann = {
@@ -105,7 +113,9 @@ def _coco_ann(img_id: int, ann_id: int, label, pieces, pv, extra_annotations: bo
         ann["segmentation"] = seg
     ann["area"] = area if area > 0 else int((x1 - x0) * (y1 - y0))
     if extra_annotations and pv is not None:
-        ann["extra_annotations"] = _extra_annotation(pv)
+        cls_i = int(cls)
+        class_name = class_names[cls_i] if 0 <= cls_i < len(class_names) else None
+        ann["extra_annotations"] = _extra_annotation(pv, class_name)
     return ann
 
 
@@ -139,9 +149,16 @@ def write_coco(
             for label, pieces, pv in zip(labels, polys, prov, strict=False):
                 if ann_id > 1:
                     f.write(", ")
-                f.write(json.dumps(_coco_ann(img_id, ann_id, label, pieces, pv, extra_annotations)))
+                f.write(
+                    json.dumps(
+                        _coco_ann(img_id, ann_id, label, pieces, pv, extra_annotations, class_names)
+                    )
+                )
                 ann_id += 1
-        categories = [{"id": i + 1, "name": n} for i, n in enumerate(class_names)]
+        categories = [
+            {"id": i + 1, "name": n, "supercategory": SEED_SUPERCATEGORY}
+            for i, n in enumerate(class_names)
+        ]
         f.write('], "categories": ' + json.dumps(categories) + "}")
 
 

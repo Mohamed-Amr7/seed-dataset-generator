@@ -455,6 +455,10 @@ def run(cfg: Config) -> None:
                 lines = []
                 for i in sorted(prov_store):
                     name, prov = prov_store[i]
+                    for box in prov or []:  # surface the human-readable seed class per box
+                        cid = box.get("class_id")
+                        if isinstance(cid, int) and 0 <= cid < len(class_names):
+                            box["class_name"] = class_names[cid]
                     lines.append(
                         json.dumps({"image": f"{split}/images/{name}", "boxes": prov or []})
                     )

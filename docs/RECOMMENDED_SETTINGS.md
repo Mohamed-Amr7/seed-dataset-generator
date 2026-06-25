@@ -327,3 +327,34 @@ params are isolated in the cache key, so tuning one never invalidates another's 
 - Synthetic backgrounds (`solid/gradient/noise`) are a fallback; **prefer `--bg-from-sources`**
   (or `--textures <real photos>`). Avoid `--backgrounds seedbed` (unlabelled seed clutter).
 ```
+
+## 7. Class / seed-type provenance (multi-type datasets)
+
+Each **top-level source subfolder is one class** when you pass `--class-mode subfolders`
+(the torchvision *ImageFolder* convention). The folder name becomes the class name, enumerated
+in sorted order to a 0-based `class_id`. Nested subfolders (e.g. `wheat/variety_a/`) are *not*
+yet a hierarchy — every file under `wheat/` is class `wheat`.
+
+- **Default `--class-mode single`** merges everything into one class `seed`. If your `--sources`
+  has ≥2 image-bearing subfolders, a startup **warning** reminds you to switch to `subfolders`
+  (otherwise the per-type distinction is silently lost).
+
+Where the class shows up in the outputs:
+
+| Artifact | Field |
+| --- | --- |
+| YOLO label line | leading `class_id` (0-based) |
+| `data.yaml` | `nc`, `names: [...]` (id→name) |
+| COCO `categories` | `{"id", "name", "supercategory": "seed"}` (id is 1-based) |
+| COCO annotation `category_id` | `class_id + 1` |
+| COCO `extra_annotations`* | `class_id`, `class_name` (+ `source` rel path) |
+| `provenance_<split>.jsonl`* | per-box `class_id`, `class_name`, `source` |
+| `seg_report.json` | `summary.class_counts` (kept cut-outs per class); class on each skipped entry |
+| `.seg_cache/<key>.json` | `report.class_id` / `report.class_name` |
+
+\* `extra_annotations` requires `--extra-annotations`; the JSONL requires `--provenance`.
+
+> **Cache note:** the `.seg_cache` is keyed by image *content* (not folder), so one image reused
+> across two class folders shares a single cache entry — its stored `class_*` is the last writer's.
+> This is cosmetic: the class for every generated label/annotation is resolved per task at run
+> time, so outputs are always correct.
