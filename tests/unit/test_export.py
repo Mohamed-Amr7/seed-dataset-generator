@@ -77,7 +77,7 @@ def test_write_coco_emits_valid_structure(tmp_path):
 
     data = json.loads(path.read_text())
     assert {"images", "annotations", "categories"} <= data.keys()
-    assert data["categories"] == [{"id": 1, "name": "seed"}]
+    assert data["categories"] == [{"id": 1, "name": "seed", "supercategory": "seed"}]
     ann = data["annotations"][0]
     assert ann["bbox"] == [10, 10, 20, 30]  # x, y, w, h
     assert ann["category_id"] == 1  # COCO is 1-indexed
@@ -97,12 +97,22 @@ def test_write_coco_includes_polygon_segmentation_when_present(tmp_path):
 
 def test_write_coco_flattens_provenance_into_extra_annotations(tmp_path):
     path = tmp_path / "annotations.json"
-    prov = [{"source": "src/seed_0.png", "seg_method": "otsu", "transform": {"scale": 0.1}}]
-    records = [("img.jpg", 100, 100, [(0, 0, 0, 10, 10)], [None], prov)]
+    prov = [
+        {
+            "source": "wheat/seed_0.png",
+            "seg_method": "otsu",
+            "class_id": 1,
+            "transform": {"scale": 0.1},
+        }
+    ]
+    records = [("img.jpg", 100, 100, [(1, 0, 0, 10, 10)], [None], prov)]
 
-    export.write_coco(path, records, ["seed"], extra_annotations=True)
+    export.write_coco(path, records, ["soybean", "wheat"], extra_annotations=True)
 
     ann = json.loads(path.read_text())["annotations"][0]
-    assert ann["extra_annotations"]["source"] == "src/seed_0.png"
+    assert ann["extra_annotations"]["source"] == "wheat/seed_0.png"
     assert ann["extra_annotations"]["seg_method"] == "otsu"
     assert ann["extra_annotations"]["scale"] == pytest.approx(0.1)
+    # class provenance: id carried from the placement, name resolved from class_names
+    assert ann["extra_annotations"]["class_id"] == 1
+    assert ann["extra_annotations"]["class_name"] == "wheat"

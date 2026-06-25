@@ -8,6 +8,8 @@ unit suite (they are smoke-tested separately and gated behind the ``gpu`` marker
 
 from __future__ import annotations
 
+import logging
+
 import cv2
 import numpy as np
 import pytest
@@ -125,3 +127,53 @@ def test_extract_background_is_none_for_transparent_source(make_cfg, seed_cutout
     """A cut-out with a transparent border has no surface behind it to recover."""
     cfg = make_cfg(segment="otsu")
     assert extract_background(seed_cutout.rgba, cfg) is None
+
+
+def _write_separable_seed(path):
+    """A dark square on a light field - otsu keeps it as a tight cut-out."""
+    img = np.full((48, 48, 3), 200, np.uint8)
+    img[14:34, 14:34] = 30
+    cv2.imwrite(str(path), img)
+
+
+def test_single_mode_warns_on_multiple_subfolders(make_cfg, tmp_path, caplog):
+    """A multi-subfolder layout left in the default single mode collapses every seed into
+    one class - warn so the user knows to reach for --class-mode subfolders."""
+    src = tmp_path / "src"
+    for sub in ("wheat", "soybean"):
+        (src / sub).mkdir(parents=True)
+        _write_separable_seed(src / sub / "s0.png")
+
+    cfg = make_cfg(sources=src, out=tmp_path / "out", segment="otsu", jobs=1, use_cache=False)
+    with caplog.at_level(logging.WARNING, logger="multiseedgen.segmentation.loader"):
+        _seeds, class_names, _bgs, _results = load_seeds(cfg)
+
+    assert class_names == ["seed"]  # subfolders ignored in single mode
+    assert any("class_mode=single" in r.message for r in caplog.records)
+
+
+def test_subfolders_mode_records_class_in_seg_report(make_cfg, tmp_path):
+    """class_mode=subfolders carries each subfolder name through to the per-seed report,
+    so write_seg_report can tally kept cut-outs per class."""
+    src = tmp_path / "src"
+    for sub in ("wheat", "soybean"):
+        (src / sub).mkdir(parents=True)
+        _write_separable_seed(src / sub / "s0.png")
+
+    cfg = make_cfg(
+        sources=src,
+        out=tmp_path / "out",
+        segment="otsu",
+        jobs=1,
+        use_cache=False,
+        class_mode="subfolders",
+    )
+    _seeds, class_names, _bgs, results = load_seeds(cfg)
+    assert set(class_names) == {"wheat", "soybean"}
+    # every kept seed's report carries its class
+    assert all(
+        r.report.get("class_name") in class_names for r in results if not r.report.get("skipped")
+    )
+
+    summary = write_seg_report(cfg.out, results, cfg)
+    assert summary["class_counts"] == {"wheat": 1, "soybean": 1}
